@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recall</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main>
+    <h1>Recall</h1>
+    <p class="sub">Ask a question. The answer comes from your own notes. &middot; <a href="/map" class="maplink">See the mind map</a> &middot; <a href="/journal" class="maplink">Journal</a></p>
+
+    <form action="/ask" method="post">
+      <textarea name="question" rows="3"
+        placeholder="e.g. What time does the café open on Sundays?">{{ result.question if result else '' }}</textarea>
+      <div class="askrow">
+        <button type="submit">Ask</button>
+        <label class="modelpick">Ask about
+          <select id="areaPick" name="area">
+            <option value="Everything">Everything</option>
+            {% for a in areas %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="modelpick">Answer style
+          <select id="modelPick" name="model"></select>
+        </label>
+        <span class="modelhint" id="modelHint"></span>
+      </div>
+      <div class="hint-inline" style="margin-top:8px">Press Enter to send. Shift+Enter for a new line.</div>
+    </form>
+
+    <div class="loading-inline" id="loading">
+      <span class="spinner-sm"></span>
+      <span><span class="loading-msg" id="loadingMsg">Working…</span> <span class="loading-sub" id="loadingSub"></span></span>
+    </div>
+
+    <div class="toolrow">
+      <form action="/refresh" method="post" id="refreshForm">
+        <button type="submit" class="linkbtn">↻ Refresh from my notes</button>
+      </form>
+      <div class="refreshprog" id="refreshProg" style="display:none">
+        <div class="refreshprog-bar"><span id="refreshProgFill"></span></div>
+        <div class="refreshprog-label" id="refreshProgLabel">Starting…</div>
+      </div>
+      <div id="refreshedSlot">
+        {% include "_refreshed.html" %}
+      </div>
+      <div id="categoriesSlot">{% if categories %}{% include "_categories.html" %}{% endif %}</div>
+    </div>
+
+    <div class="memory" id="memoryRow"{% if not has_history %} style="display:none"{% endif %}>
+      <span>Remembering your recent questions, so you can ask a follow-up.</span>
+      <form action="/fresh" method="post">
+        <button type="submit" class="linkbtn">Start fresh</button>
+      </form>
+    </div>
+
+    {% if saved %}
+      <div class="saved">Saved "{{ saved }}" to your brain. You can ask about it now.</div>
+    {% endif %}
+
+    <details class="addnote">
+      <summary>Add a note to your brain</summary>
+      <form action="/add" method="post">
+        <input type="text" name="title" placeholder="Title (optional), e.g. Weekly planning notes">
+        <textarea name="note" rows="4" placeholder="Type or paste anything you want the brain to remember."></textarea>
+        <button type="submit">Save note</button>
+      </form>
+    </details>
+
+    <div id="live" style="display:none">
+      <section class="answer">
+        <h2>Answer</h2>
+        <p id="liveAnswer"></p>
+      </section>
+      <section class="sources"><div id="liveSources"></div></section>
+    </div>
+
+    {% if result %}
+      <section class="answer">
+        <h2>Answer</h2>
+        {% if result.answer %}
+          <p>{{ result.answer }}</p>
+        {% else %}
+          <p class="note">No written answer this time. The retrieved notes below
+          are the core result. If you expected a written answer, check that the
+          local model server (Ollama) is running.</p>
+        {% endif %}
+      </section>
+
+      <section class="sources">
+        <h2>Retrieved notes <span class="count">({{ result.sources|length }})</span></h2>
+        <p class="sub">These are the closest chunks the search found. Higher score = closer in meaning.</p>
+        {% for s in result.sources %}
+          <details {% if loop.first %}open{% endif %}>
+            <summary>
+              <span class="file">{{ s.source }}</span>
+              <span class="score">{{ '%.3f'|format(s.score) }}</span>
+            </summary>
+            <pre>{{ s.text }}</pre>
+          </details>
+        {% endfor %}
+      </section>
+    {% endif %}
+  </main>
+
+  <script>
+  (function () {
+    const box = document.getElementById("loading");
+    const msg = document.getElementById("loadingMsg");
+    const sub = document.getElementById("loadingSub");
+    // For the full-page-POST forms (refresh, add): show the inline spinner on submit.
+    function start(steps, subtext) {
+      let i = 0;
+      msg.textContent = steps[0];
+      sub.textContent = subtext || "";
+      box.classList.add("show");
+      return setInterval(() => { i = Math.min(i + 1, steps.length - 1); msg.textContent = steps[i]; }, 5000);
+    }
+    function stop(id) { clearInterval(id); box.classList.remove("show"); }
+
+    // Model picker: fill it from the models installed in Ollama, but label them
+    // in plain words (Faster / Smarter) instead of raw model IDs, because the
+    // ID means nothing unless you already know the models. Choice is remembered.
+    const modelPick = document.getElementById("modelPick");
+    const modelHint = document.getElementById("modelHint");
+    if (modelPick) {
+      // Parameter count in billions, for ranking small (fast) vs big (smart).
+      const sizeOf = m => {
+        if (m.params) { const x = parseFloat(m.params);
+          if (!isNaN(x)) return /m/i.test(m.params) ? x / 1000 : x; }
+        return m.gb || 0;
+      };
+      fetch("/models").then(r => r.json()).then(data => {
+        const models = (data.models || []).slice();
+        if (!models.length) {                // Ollama not reachable — hide the picker
+          modelPick.closest(".modelpick").style.display = "none";
+          if (modelHint) modelHint.style.display = "none";
+          return;
+        }
+        // Rank by size so we can call the smallest "Faster" and biggest "Smarter".
+        const bySize = models.slice().sort((a, b) => sizeOf(a) - sizeOf(b));
+        const tier = {}, hint = {};
+        models.forEach(m => {
+          const rank = bySize.indexOf(m), n = bySize.length;
+          if (n === 1) { tier[m.name] = ""; hint[m.name] = "The only model installed."; }
+          else if (rank === 0) { tier[m.name] = "Faster"; hint[m.name] = "Quicker answers, a bit simpler."; }
+          else if (rank === n - 1) { tier[m.name] = "Smarter"; hint[m.name] = "Best answers, but slower."; }
+          else { tier[m.name] = "Balanced"; hint[m.name] = "A middle ground on speed and quality."; }
+        });
+        const label = m => {
+          const base = m.name.split(":")[0];
+          const size = m.params || (m.gb ? m.gb + " GB" : "");
+          const parts = [base]; if (size) parts.push(size);
+          const tag = tier[m.name];
+          return (tag ? tag + " — " : "") + parts.join(" ");
+        };
+
+        const saved = localStorage.getItem("recallModel");
+        const names = models.map(m => m.name);
+        const pick = names.includes(saved) ? saved : (data.current || names[0]);
+
+        // Show fastest first so the quick option is the obvious top choice.
+        modelPick.innerHTML = "";
+        bySize.forEach(m => {
+          const o = document.createElement("option");
+          o.value = m.name; o.textContent = label(m);
+          if (m.name === pick) o.selected = true;
+          modelPick.appendChild(o);
+        });
+        const setHint = () => { if (modelHint) modelHint.textContent = hint[modelPick.value] || ""; };
+        setHint();
+        modelPick.addEventListener("change", () => {
+          localStorage.setItem("recallModel", modelPick.value);
+          setHint();
+        });
+      }).catch(() => {
+        modelPick.closest(".modelpick").style.display = "none";
+        if (modelHint) modelHint.style.display = "none";
+      });
+    }
+
+    // "Ask about…" area picker: remember the last choice so it sticks between
+    // questions. Everything is the default (search the whole brain).
+    const areaPick = document.getElementById("areaPick");
+    if (areaPick) {
+      const savedArea = localStorage.getItem("recallArea");
+      if (savedArea && [...areaPick.options].some(o => o.value === savedArea)) {
+        areaPick.value = savedArea;
+      }
+      areaPick.addEventListener("change", () =>
+        localStorage.setItem("recallArea", areaPick.value));
+    }
+
+    // Editable category breakdown: pick a different area for a note and it saves
+    // (overriding the automatic sorting) then the list re-renders in place. The
+    // listener is on document so it survives the re-render.
+    async function reloadCategories(openArea) {
+      const cm = document.getElementById("catmap");
+      if (!cm) return;
+      const html = await (await fetch("/categories")).text();
+      cm.outerHTML = html;
+      if (openArea) {
+        document.querySelectorAll("#catmap .catarea").forEach(d => {
+          const nm = d.querySelector(".catname");
+          if (nm && nm.textContent === openArea) d.open = true;
+        });
+      }
+    }
+    document.addEventListener("change", async (e) => {
+      const sel = e.target;
+      if (!sel.classList || !sel.classList.contains("areasel")) return;
+      sel.disabled = true;
+      try {
+        const r = await fetch("/set_area", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ source: sel.getAttribute("data-source"), area: sel.value }),
+        });
+        if (r.ok) await reloadCategories(sel.value);
+      } finally {
+        sel.disabled = false;
+      }
+    });
+
+    function renderSources(el, sources) {
+      el.innerHTML = "";
+      if (!sources || !sources.length) return;
+      const h = document.createElement("h2");
+      h.innerHTML = 'Retrieved notes <span class="count">(' + sources.length + ')</span>';
+      el.appendChild(h);
+      sources.forEach((s, i) => {
+        const d = document.createElement("details");
+        if (i === 0) d.open = true;
+        const sum = document.createElement("summary");
+        const f = document.createElement("span"); f.className = "file"; f.textContent = s.source;
+        const sc = document.createElement("span"); sc.className = "score"; sc.textContent = Number(s.score).toFixed(3);
+        sum.appendChild(f); sum.appendChild(sc);
+        const pre = document.createElement("pre"); pre.textContent = s.text || "";
+        d.appendChild(sum); d.appendChild(pre); el.appendChild(d);
+      });
+    }
+
+    const ask = document.querySelector('form[action="/ask"]');
+    if (ask) {
+      const q = ask.querySelector("textarea");
+      const live = document.getElementById("live");
+      const ansEl = document.getElementById("liveAnswer");
+      const srcEl = document.getElementById("liveSources");
+
+      ask.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const question = q.value.trim();
+        if (!question) return;
+
+        ansEl.textContent = "";
+        srcEl.innerHTML = "";
+        live.style.display = "block";
+        // Now that a question has been asked, the app is remembering it — so the
+        // "Start fresh" control becomes relevant. The AJAX ask never reloads the
+        // page, so reveal it here instead of relying on a server re-render.
+        const memRow = document.getElementById("memoryRow");
+        if (memRow) memRow.style.display = "";
+        const spin = start(
+          ["Finding the notes that matter…", "Reading your notes…", "Writing your answer…"],
+          "The answer appears word by word as it's written."
+        );
+        let answer = "";
+        let firstToken = true;
+
+        try {
+          const body = { question };
+          if (modelPick && modelPick.value) body.model = modelPick.value;
+          if (areaPick && areaPick.value) body.area = areaPick.value;
+          const resp = await fetch("/ask_stream", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams(body),
+          });
+          const reader = resp.body.getReader();
+          const dec = new TextDecoder();
+          let headerParsed = false, pending = "";
+
+          // Render the answer live, word by word, as the model writes it. On a
+          // CPU-only machine the first word lands in a few seconds while the full
+          // answer takes far longer, so showing tokens as they arrive beats
+          // staring at a spinner. Sources render as soon as the header line lands.
+          const show = (text) => {
+            if (!text) return;
+            answer += text;
+            if (firstToken) { stop(spin); firstToken = false; }
+            ansEl.textContent = answer;
+          };
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            const text = dec.decode(value, { stream: true });
+            if (headerParsed) {
+              show(text);
+              continue;
+            }
+            pending += text;
+            const nl = pending.indexOf("\n");
+            if (nl >= 0) {
+              const head = pending.slice(0, nl), rest = pending.slice(nl + 1);
+              headerParsed = true;
+              try { renderSources(srcEl, JSON.parse(head).sources); } catch (_) {}
+              show(rest);
+            }
+          }
+        } catch (err) {
+          ansEl.textContent = "Something went wrong reaching the answer engine.";
+        } finally {
+          stop(spin);
+          if (!ansEl.textContent.trim()) {
+            ansEl.innerHTML = '<span class="note">No written answer this time. The notes below are the result. Check that the local model server (Ollama) is running.</span>';
+          }
+        }
+      });
+
+      // Enter sends the question; Shift+Enter makes a new line.
+      q.addEventListener("keydown", e => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask.requestSubmit(); }
+      });
+
+      // "Ask about this note" on the map sends us here with ?ask=... — fill the
+      // box and run it straight away, then clean the URL so a reload won't re-ask.
+      const preset = new URLSearchParams(location.search).get("ask");
+      if (preset) {
+        q.value = preset;
+        history.replaceState(null, "", location.pathname);
+        ask.requestSubmit();
+      }
+    }
+
+    // Refresh: fire the background re-index and poll for progress, so the page
+    // never freezes while embedding runs. A build kicked off at startup is picked
+    // up the same way (see the initial poll below).
+    const refreshForm = document.getElementById("refreshForm");
+    const prog = document.getElementById("refreshProg");
+    const progFill = document.getElementById("refreshProgFill");
+    const progLabel = document.getElementById("refreshProgLabel");
+    let polling = null;
+
+    function fmtEta(s) {
+      if (!s || s < 1) return "";
+      const m = Math.floor(s / 60), r = s % 60;
+      return m ? `about ${m}m${String(r).padStart(2, "0")}s left` : `about ${r}s left`;
+    }
+
+    function showProg(on) { prog.style.display = on ? "" : "none"; }
+
+    async function pollStatus() {
+      let st;
+      try { st = await (await fetch("/refresh_status")).json(); }
+      catch { return; }
+
+      if (st.phase === "embedding" && st.total) {
+        const pct = Math.round((st.done / st.total) * 100);
+        progFill.style.width = pct + "%";
+        progLabel.textContent = `${pct}%  ·  ${st.done}/${st.total} pieces  ·  ${fmtEta(st.eta)}`;
+      } else if (st.running) {
+        progFill.style.width = "0%";
+        progLabel.textContent = st.message || "Working…";
+      }
+
+      if (!st.running) {
+        clearInterval(polling); polling = null;
+        if (st.phase === "error") {
+          progFill.style.width = "0%";
+          progLabel.textContent = st.message || "Indexing failed.";
+          return;  // leave the message up so the error is visible
+        }
+        showProg(false);
+        if (st.refreshed_html !== undefined) {
+          document.getElementById("refreshedSlot").innerHTML = st.refreshed_html;
+        }
+        if (st.categories_html !== undefined) {
+          document.getElementById("categoriesSlot").innerHTML = st.categories_html;
+        }
+      }
+    }
+
+    function beginPolling() {
+      showProg(true);
+      progLabel.textContent = "Starting…";
+      progFill.style.width = "0%";
+      if (polling) clearInterval(polling);
+      pollStatus();
+      polling = setInterval(pollStatus, 800);
+    }
+
+    if (refreshForm) {
+      refreshForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        beginPolling();
+        try { await fetch("/refresh", { method: "POST" }); } catch {}
+      });
+    }
+
+    // If a build is already running (e.g. the one started at launch), attach to it
+    // so the user sees progress without having to click Refresh.
+    fetch("/refresh_status").then(r => r.json()).then(st => {
+      if (st.running) beginPolling();
+    }).catch(() => {});
+    const add = document.querySelector('form[action="/add"]');
+    if (add) add.addEventListener("submit", () => {
+      if (!add.querySelector("textarea").value.trim()) return;
+      start(["Saving your note…", "Adding it to the brain…"]);
+    });
+  })();
+  </script>
+</body>
+</html>

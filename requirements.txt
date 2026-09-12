@@ -1,0 +1,6 @@
+flask
+fastembed
+numpy
+requests
+anthropic
+python-dotenv

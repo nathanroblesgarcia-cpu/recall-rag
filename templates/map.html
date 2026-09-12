@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recall — Map</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    /* The map wants room — break out of the narrow reading column. */
+    main { max-width: min(1600px, 95vw); }
+    .maptop { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .maptop h1 { margin: 0; }
+    .maptop a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .maptop a:hover { text-decoration: underline; }
+
+    #wrap {
+      display: flex;
+      height: 760px;
+      margin-top: 16px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.35);
+    }
+    .stage { position: relative; flex: 1; min-width: 0; }
+    canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+    canvas.panning { cursor: grabbing; }
+
+    /* Top-left overlay: search, like Obsidian's graph search. */
+    .searchbox {
+      position: absolute; top: 12px; left: 12px; z-index: 4;
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-radius: 12px;
+      background: rgba(20,22,26,0.85); border: 1px solid var(--border);
+      backdrop-filter: blur(6px);
+    }
+    .searchbox input {
+      background: transparent; border: none; outline: none;
+      color: var(--text); font-size: 14px; width: 190px;
+    }
+    .searchbox input::placeholder { color: var(--muted); }
+    .searchbox .clear {
+      display: none; cursor: pointer; border: none; background: transparent;
+      color: var(--muted); font-size: 15px; line-height: 1; padding: 2px 4px;
+      border-radius: 6px;
+    }
+    .searchbox .clear:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+    .searchbox.has-text .clear { display: inline-block; }
+    .searchbox .count { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+    .controls {
+      position: absolute; top: 12px; right: 12px; z-index: 4;
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .controls button {
+      width: 38px; height: 38px; margin: 0; padding: 0;
+      border-radius: 10px; border: 1px solid var(--border);
+      background: rgba(28,31,38,0.85); color: var(--text);
+      font-size: 18px; font-weight: 600; cursor: pointer; backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .controls button:hover { background: var(--accent); border-color: var(--accent); }
+    .controls .reset { font-size: 13px; font-weight: 600; }
+    .controls button.active { background: var(--accent); border-color: var(--accent); }
+
+    /* Settings drawer (the gear), like Obsidian's graph controls. */
+    .settings {
+      position: fixed; top: 14px; right: 14px; z-index: 20;
+      width: 260px; padding: 0 16px 14px; border-radius: 14px;
+      background: rgba(20,22,26,0.94); border: 1px solid var(--border);
+      backdrop-filter: blur(8px); display: none;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+      max-height: calc(100vh - 28px); overflow-y: auto;
+    }
+    .settings.open { display: block; }
+    .setbar {
+      position: sticky; top: 0; z-index: 1;
+      display: flex; align-items: center; justify-content: space-between;
+      margin: 0 -16px 4px; padding: 12px 16px 8px;
+      background: rgba(20,22,26,0.98);
+      font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--muted); font-weight: 700;
+    }
+    .setclose {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: 16px; line-height: 1; padding: 2px 4px; border-radius: 6px;
+    }
+    .setclose:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+    .settings h4 {
+      margin: 14px 0 8px; font-size: 11px; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--muted); font-weight: 700;
+    }
+    .settings h4:first-child { margin-top: 0; }
+    .settings .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 9px 0; }
+    .settings .row label { font-size: 13px; color: var(--text); }
+    .settings input[type=range] { flex: 1; accent-color: var(--accent); }
+    .settings .slider { display: block; margin: 9px 0; }
+    .settings .slider .lab { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+    .settings .toggle { cursor: pointer; }
+    .settings input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
+    .settings select {
+      background: rgba(28,31,38,0.9); color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 4px 8px; font-size: 13px; max-width: 150px;
+    }
+
+    /* Reading panel: ask button + links section */
+    .panel .paskrow, .panel .plinks { width: 400px; box-sizing: border-box; }
+    .panel .paskrow { padding: 12px 18px 0; }
+    .askbtn {
+      width: 100%; margin: 0; padding: 9px 12px; border-radius: 10px;
+      background: var(--accent); color: #fff; border: none; cursor: pointer;
+      font-size: 14px; font-weight: 600;
+    }
+    .askbtn:hover { filter: brightness(1.08); }
+    .plinks { padding: 12px 18px 0; }
+    .plinks .lgroup { margin-bottom: 10px; }
+    .plinks .lhead {
+      font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--muted); font-weight: 700; margin-bottom: 6px;
+    }
+    .plinks .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .lchip {
+      margin: 0; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+      background: var(--panel); border: 1px solid var(--border);
+      color: var(--text); font-size: 12.5px; font-weight: 500;
+    }
+    .lchip:hover { border-color: var(--accent); background: rgba(91,140,255,0.12); }
+    .lchip.broken { cursor: default; color: #ff8a8a; border-color: rgba(255,120,120,0.4); }
+    .lchip.broken:hover { background: var(--panel); }
+
+    .infobar {
+      position: absolute; left: 12px; bottom: 12px; z-index: 4;
+      max-width: 70%;
+      padding: 10px 14px; border-radius: 12px;
+      background: rgba(20,22,26,0.82); border: 1px solid var(--border);
+      backdrop-filter: blur(6px); font-size: 15px; color: var(--muted);
+    }
+    .infobar b { color: var(--text); }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .legend .pill {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 5px 12px; border-radius: 999px;
+      background: var(--panel); border: 1px solid var(--border);
+      font-size: 13px; color: var(--text);
+    }
+    .dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+    .hint { color: var(--muted); font-size: 13px; margin-top: 12px; }
+
+    .panel {
+      flex: 0 0 0px; overflow: hidden;
+      background: rgba(18,20,25,0.97); border-left: 0 solid var(--border);
+      transition: flex-basis 0.2s ease; display: flex; flex-direction: column;
+    }
+    .panel.open { flex-basis: 400px; border-left: 1px solid var(--border); }
+    .panel .phead, .panel .pbody { width: 400px; box-sizing: border-box; }
+    .panel .phead {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+      padding: 15px 18px; border-bottom: 1px solid var(--border);
+    }
+    .panel .ptitle { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+    .panel .pgroup { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .panel .pclose {
+      margin: 0; padding: 2px 11px; font-size: 17px; line-height: 1.2;
+      background: transparent; border: 1px solid var(--border); color: var(--muted); box-shadow: none;
+    }
+    .panel .pclose:hover { border-color: var(--accent); color: var(--text); background: transparent; }
+    .panel .pbody {
+      flex: 1; padding: 18px; overflow-y: auto; white-space: pre-wrap;
+      font-size: 15px; line-height: 1.65; color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="maptop">
+      <h1>Mind map</h1>
+      <span><a href="/">← Back to asking</a> &nbsp;&middot;&nbsp; <a href="/journal">Journal</a></span>
+    </div>
+    <p class="sub">Every note is a dot floating in a 3D cloud. Lines are the real links between notes — solid where a note names another with a <code>[[link]]</code>, faint where two notes are just about the same thing. Bigger dots are more connected. Drag the background to spin the cloud, scroll to zoom, drag a dot to pull it, click a dot to read the note. Use <b>3D/2D</b> to flatten it.</p>
+
+    <div id="wrap">
+      <div class="stage">
+        <canvas id="cv"></canvas>
+
+        <div class="searchbox">
+          <span style="color:var(--muted)">🔍</span>
+          <input id="search" type="text" placeholder="Search notes…" autocomplete="off">
+          <button id="sclear" class="clear" title="Clear search (Esc)" aria-label="Clear search">✕</button>
+          <span class="count" id="scount"></span>
+        </div>
+
+        <div class="controls">
+          <button id="d3" class="reset active" title="Toggle 3D / 2D">3D</button>
+          <button id="gear" title="Graph settings">⚙</button>
+          <button id="zin" title="Zoom in">+</button>
+          <button id="zout" title="Zoom out">−</button>
+          <button id="reset" class="reset" title="Reset view">Fit</button>
+        </div>
+
+        <div class="settings" id="settings">
+          <div class="setbar"><span>Settings</span><button id="setClose" class="setclose" title="Close" aria-label="Close settings">✕</button></div>
+          <h4>Filters</h4>
+          <div class="row"><label class="toggle" for="tLink">Show links</label><input type="checkbox" id="tLink" checked></div>
+          <div class="row"><label class="toggle" for="tSim">Show similar</label><input type="checkbox" id="tSim" checked></div>
+          <div class="row"><label class="toggle" for="tOrphan">Show orphans</label><input type="checkbox" id="tOrphan" checked></div>
+          <div class="row"><label for="projFilter">Project</label><select id="projFilter"></select></div>
+          <div class="row"><label for="areaFilter">Area</label><select id="areaFilter"></select></div>
+
+          <h4>Display</h4>
+          <div class="row"><label class="toggle" for="tLabel">Show labels</label><input type="checkbox" id="tLabel"></div>
+          <div class="row"><label class="toggle" for="tSpin">Spin (3D)</label><input type="checkbox" id="tSpin" checked></div>
+          <div class="row"><label for="colorBy">Color by</label><select id="colorBy"><option value="topic">Topic</option><option value="type">Type</option><option value="area">Area</option></select></div>
+          <div class="slider"><div class="lab"><span>Node size</span></div><input type="range" id="sSize" min="0.5" max="2.6" step="0.05" value="1"></div>
+          <div class="slider"><div class="lab"><span>Label fade</span></div><input type="range" id="sLabel" min="0.4" max="2.6" step="0.05" value="1.05"></div>
+          <div class="slider"><div class="lab"><span>Link thickness</span></div><input type="range" id="sLine" min="0.4" max="3" step="0.1" value="1"></div>
+
+          <h4>Forces</h4>
+          <div class="slider"><div class="lab"><span>Repel</span></div><input type="range" id="fRepel" min="2000" max="20000" step="500" value="7000"></div>
+          <div class="slider"><div class="lab"><span>Link distance</span></div><input type="range" id="fRest" min="50" max="300" step="5" value="130"></div>
+          <div class="slider"><div class="lab"><span>Link strength</span></div><input type="range" id="fSpring" min="0.004" max="0.06" step="0.002" value="0.016"></div>
+          <div class="slider"><div class="lab"><span>Center gravity</span></div><input type="range" id="fGrav" min="0" max="0.03" step="0.001" value="0.006"></div>
+        </div>
+
+        <div class="infobar" id="info">Hover a dot to see its name. Click a dot to read the whole note.</div>
+        <div class="map-badge" id="maploading"><span class="spinner-sm"></span>Building your mind map…</div>
+      </div>
+      <div class="panel" id="panel">
+        <div class="phead">
+          <div>
+            <div class="ptitle" id="ptitle"></div>
+            <div class="pgroup" id="pgroup"></div>
+          </div>
+          <button class="pclose" id="pclose" title="Close">×</button>
+        </div>
+        <div class="paskrow"><button id="askbtn" class="askbtn">💬 Ask about this note</button></div>
+        <div class="plinks" id="plinks"></div>
+        <div class="pbody" id="pbody"></div>
+      </div>
+    </div>
+
+    <div class="legend" id="legend"></div>
+    <p class="hint">Solid lines = a note that links to another. Faint lines = notes about the same thing. Drag the background to spin, hold Shift and drag to pan, scroll to zoom, and open the ⚙ to tune the forces (in 2D, drag pans).</p>
+  </main>
+
+  <script id="data" type="application/json">{{ graph|tojson }}</script>
+  <script>
+  const GRAPH = JSON.parse(document.getElementById("data").textContent);
+  const canvas = document.getElementById("cv");
+  const ctx = canvas.getContext("2d");
+
+  const PALETTE = ["#5b8cff", "#ff8a5b", "#4fd08a", "#c58cff", "#ffd45b", "#5bd0d0", "#ff6b9d", "#9b8cff", "#ffa94d", "#63e6be", "#ff7f7f", "#8fd14f"];
+  const groups = [...new Set(GRAPH.nodes.map(n => n.group))];
+  const groupColor = {};
+  groups.forEach((g, i) => groupColor[g] = PALETTE[i % PALETTE.length]);
+  // Fixed colours for the note's own type, used when "Color by" = Type.
+  const TYPE_COLORS = { project: "#5b8cff", feedback: "#ffd45b", reference: "#4fd08a", user: "#ff6b9d", note: "#8891a5" };
+  const TYPE_LABELS = { project: "Project", feedback: "Feedback", reference: "Reference", user: "User", note: "Note" };
+  // Colours for the life area a note falls into, used when "Color by" = Area.
+  const areas = GRAPH.areas || [...new Set(GRAPH.nodes.map(n => n.area))];
+  const areaColor = {};
+  areas.forEach((a, i) => areaColor[a] = PALETTE[i % PALETTE.length]);
+  const colorOf = n => S.colorBy === "type"
+    ? (TYPE_COLORS[n.type] || "#8891a5")
+    : S.colorBy === "area"
+    ? (areaColor[n.area] || "#8891a5")
+    : (groupColor[n.group] || "#8891a5");
+
+  let W = canvas.clientWidth || 900, H = canvas.clientHeight || 760, dpr = window.devicePixelRatio || 1;
+  function fitCanvas() {
+    W = canvas.clientWidth || 900; H = canvas.clientHeight || 760; dpr = window.devicePixelRatio || 1;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+  }
+  fitCanvas();
+
+  // --- 3D state ---------------------------------------------------------------
+  // The cloud lives in world space (x,y around W/2,H/2 and z around 0). Each
+  // frame we rotate it by (rotX,rotY) and project it to the screen with a little
+  // perspective, so nearer dots look bigger and brighter. is3D=false flattens z.
+  let is3D = true;
+  let rotX = -0.35, rotY = 0.6;      // a gentle starting tilt so depth reads
+  const FOCAL = 1600;                 // perspective focal length (bigger = flatter)
+
+  const byId = {};
+  const nodes = GRAPH.nodes.map(n => {
+    const o = { ...n,
+      x: W/2 + (Math.random()-0.5)*W*0.6,
+      y: H/2 + (Math.random()-0.5)*H*0.6,
+      z: (Math.random()-0.5)*W*0.4,
+      vx: 0, vy: 0, vz: 0 };
+    byId[n.id] = o; return o;
+  });
+  const edges = GRAPH.edges.map(e => ({ s: byId[e.source], t: byId[e.target], w: e.w, kind: e.kind })).filter(e => e.s && e.t);
+  const neighbours = {};
+  nodes.forEach(n => neighbours[n.id] = new Set());
+  edges.forEach(e => { neighbours[e.s.id].add(e.t.id); neighbours[e.t.id].add(e.s.id); });
+
+  // Live settings, driven by the sliders / toggles in the gear panel.
+  const S = {
+    showLink: true, showSim: true, showOrphan: true,
+    size: 1, labelZoom: 1.05, line: 1, colorBy: "area", proj: "all", area: "all", showLabel: false, spin: true,
+    repel: 7000, rest: 130, spring: 0.016, grav: 0.006,
+  };
+  // Which edges are currently visible, given the toggles.
+  const edgeVisible = e => (e.kind === "link" ? S.showLink : S.showSim);
+  const nodeVisible = n => (S.showOrphan || n.deg > 0)
+    && (S.proj === "all" || n.proj === S.proj)
+    && (S.area === "all" || n.area === S.area);
+
+  // Camera: a 2D pan/zoom applied on top of the 3D projection.
+  // screenPx = W/2 + projected * cam.k + cam.{x,y}
+  const cam = { x: 0, y: 0, k: 1 };
+
+  let alpha = 1.0;
+  const GRAVITY = () => S.grav, DAMP = 0.9;
+  function step() {
+    if (alpha > 0.02) alpha *= 0.992;
+    const d3 = is3D;
+    for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i];
+      for (let j = i + 1; j < nodes.length; j++) {
+        const b = nodes[j];
+        let dx = a.x-b.x, dy = a.y-b.y, dz = d3 ? a.z-b.z : 0;
+        let d2 = dx*dx+dy*dy+dz*dz || 0.01;
+        const f = (S.repel*alpha)/d2, d = Math.sqrt(d2);
+        const fx = dx/d*f, fy = dy/d*f, fz = dz/d*f;
+        a.vx += fx; a.vy += fy; a.vz += fz; b.vx -= fx; b.vy -= fy; b.vz -= fz;
+      }
+    }
+    for (const e of edges) {
+      if (!edgeVisible(e)) continue;
+      // Similarity edges pull a little softer than real links.
+      const k = S.spring * (e.kind === "link" ? 1 : 0.55);
+      let dx = e.t.x-e.s.x, dy = e.t.y-e.s.y, dz = d3 ? e.t.z-e.s.z : 0;
+      let d = Math.sqrt(dx*dx+dy*dy+dz*dz) || 0.01;
+      const f = k*(d-S.rest)*alpha, fx = dx/d*f, fy = dy/d*f, fz = dz/d*f;
+      e.s.vx += fx; e.s.vy += fy; e.s.vz += fz; e.t.vx -= fx; e.t.vy -= fy; e.t.vz -= fz;
+    }
+    for (const n of nodes) {
+      n.vx += (W/2 - n.x)*GRAVITY()*alpha; n.vy += (H/2 - n.y)*GRAVITY()*alpha;
+      // Pull z toward the middle plane — gently in 3D, hard in 2D to flatten it.
+      n.vz += (0 - n.z)*(d3 ? GRAVITY() : 0.2)*alpha;
+      if (n === dragNode) continue;
+      n.vx *= DAMP; n.vy *= DAMP; n.vz *= DAMP;
+      n.x += n.vx; n.y += n.vy; n.z += n.vz;
+    }
+  }
+
+  // Rotate every node by (rotX,rotY) and project to the screen. Fills, per node:
+  // px,py (screen px), pr (screen radius), pz (depth), da (0..1 depth brightness).
+  function projectAll() {
+    const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+    const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+    const CX = W/2, CY = H/2;
+    for (const n of nodes) {
+      const rx = n.x - CX, ry = n.y - CY, rz = n.z;
+      const x1 = rx*cosY + rz*sinY;
+      const z1 = -rx*sinY + rz*cosY;
+      const y1 = ry;
+      const y2 = y1*cosX - z1*sinX;
+      const z2 = y1*sinX + z1*cosX;
+      const x2 = x1;
+      let denom = FOCAL - z2; if (denom < FOCAL*0.25) denom = FOCAL*0.25;
+      const persp = FOCAL / denom;
+      n.pz = z2; n.persp = persp;
+      n._sx0 = x2*persp; n._sy0 = y2*persp;
+      n.px = CX + n._sx0*cam.k + cam.x;
+      n.py = CY + n._sy0*cam.k + cam.y;
+      n.pr = Math.max(1, radius(n)*persp*cam.k);
+      n.da = Math.min(1, Math.max(0.32, 0.5 + z2/(FOCAL*0.8)));
+    }
+  }
+
+  let hover = null, selected = null, dragNode = null, panning = false, rotating = false, lastM = null;
+  let query = "", hitSet = null;   // search state
+  let lastInteract = 0;            // for idle auto-spin
+  // Node radius grows with how connected it is — Obsidian's core idea.
+  function radius(n) { return (5 + 3.4 * Math.sqrt(n.deg || 0)) * S.size; }
+
+  function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, "#171a20"); bg.addColorStop(1, "#101216");
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    const vg = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.2, W/2, H/2, Math.max(W,H)*0.7);
+    vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.35)");
+    ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+
+    projectAll();
+    const focus = selected || hover;
+    const lit = focus ? neighbours[focus.id] : null;
+    const searching = query.length > 0;
+    const isHit = n => !searching || (hitSet && hitSet.has(n.id));
+
+    // Edges (screen space, faded a touch by depth)
+    for (const e of edges) {
+      if (!edgeVisible(e) || !nodeVisible(e.s) || !nodeVisible(e.t)) continue;
+      const on = focus && (e.s === focus || e.t === focus);
+      const dimBySearch = searching && !(isHit(e.s) && isHit(e.t));
+      let col, a;
+      if (on) { col = "230,232,236"; a = 0.65; }
+      else if (focus || dimBySearch) { col = e.kind === "link" ? "140,150,180" : "120,128,150"; a = e.kind === "link" ? 0.10 : 0.05; }
+      else { col = e.kind === "link" ? "150,160,190" : "120,130,160"; a = e.kind === "link" ? 0.34 : 0.12; }
+      const fa = 0.45 + 0.55 * Math.min(e.s.da, e.t.da);
+      ctx.strokeStyle = "rgba(" + col + "," + (a * fa).toFixed(3) + ")";
+      const base = e.kind === "link" ? 1.1 : 0.7;
+      ctx.lineWidth = (on ? base + 0.8 : base) * S.line;
+      ctx.beginPath(); ctx.moveTo(e.s.px, e.s.py); ctx.lineTo(e.t.px, e.t.py); ctx.stroke();
+    }
+
+    // Nodes — draw far-to-near so nearer dots sit on top.
+    const order = nodes.filter(nodeVisible).sort((p, q) => p.pz - q.pz);
+    for (const n of order) {
+      const dimByFocus = focus && n !== focus && !(lit && lit.has(n.id));
+      const dimBySearch = searching && !isHit(n);
+      const dim = dimByFocus || dimBySearch;
+      const r = n.pr, col = colorOf(n);
+      ctx.globalAlpha = dim ? 0.15 : (0.45 + 0.55 * n.da);
+      const g = ctx.createRadialGradient(n.px, n.py, 0, n.px, n.py, r*1.9);
+      g.addColorStop(0, col); g.addColorStop(1, col + "00");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(n.px, n.py, r*1.9, 0, 7); ctx.fill();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(n.px, n.py, r, 0, 7); ctx.fill();
+      if (searching && isHit(n) && !dim) { ctx.lineWidth = 2.2; ctx.strokeStyle = "#fff"; ctx.stroke(); }
+      if (n === focus) { ctx.lineWidth = 2.5; ctx.strokeStyle = "#fff"; ctx.stroke(); }
+      ctx.globalAlpha = 1;
+    }
+
+    // Labels. A note shows its name when it's big enough / connected enough for
+    // the current zoom, plus always for the focused node, its neighbours, and
+    // search hits — the way Obsidian fades labels in as you zoom.
+    function drawLabel(n, big) {
+      const t = n.label;
+      ctx.font = (big ? "700 " : "") + (big ? 15 : 13.5) + "px -apple-system, Segoe UI, sans-serif";
+      const w = ctx.measureText(t).width, pad = 6, r = n.pr, h = 22;
+      const x = n.px + r + 6, y = n.py;
+      ctx.fillStyle = "rgba(8,10,13,0.92)";
+      if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y - h / 2, w + pad * 2, h, 6); ctx.fill(); }
+      else ctx.fillRect(x, y - h / 2, w + pad * 2, h);
+      ctx.fillStyle = big ? "#ffffff" : "#e6e8ec";
+      ctx.fillText(t, x + pad, y + 5);
+    }
+    // Effective zoom needed to label a node: more-connected nodes label sooner.
+    const labelThreshold = n => S.labelZoom / (1 + Math.sqrt(n.deg) * 0.5);
+    if (S.showLabel) for (const n of order) {
+      if (focus && n !== focus && !(lit && lit.has(n.id))) continue;      // focus mode: only focus + neighbours
+      if (searching && !isHit(n)) continue;                              // search mode: only hits
+      const show = (n === focus) || (lit && lit.has(n.id)) || (searching && isHit(n)) || (cam.k >= labelThreshold(n));
+      if (show) drawLabel(n, n === focus || (n.deg >= 4));
+    }
+  }
+  function loop() {
+    step();
+    // Idle auto-spin in 3D: rotate slowly when nobody has touched it lately.
+    if (is3D && S.spin && !dragNode && !rotating && !panning && (performance.now() - lastInteract > 1400)) {
+      rotY += 0.0016;
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function fitView() {
+    projectAll();
+    const vis = nodes.filter(nodeVisible);
+    if (!vis.length) return;
+    let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
+    for (const n of vis) { minx = Math.min(minx, n._sx0); miny = Math.min(miny, n._sy0); maxx = Math.max(maxx, n._sx0); maxy = Math.max(maxy, n._sy0); }
+    const pad = 80, gw = Math.max(1, maxx - minx), gh = Math.max(1, maxy - miny);
+    cam.k = Math.max(0.3, Math.min(3, Math.min((W - pad * 2) / gw, (H - pad * 2) / gh)));
+    const cx = (minx + maxx) / 2, cy = (miny + maxy) / 2;
+    cam.x = -cx * cam.k; cam.y = -cy * cam.k;
+  }
+
+  // Lay the dots out INSTANTLY: run the spreading silently a few hundred times
+  // before the first frame, so the map appears already settled instead of
+  // animating out of a pile. Then frame it and start the (now calm) animation.
+  for (let i = 0; i < 320; i++) step();
+  alpha = 0.05;            // appear calm; barely drifts after this
+  fitView();
+  loop();
+  const _badge = document.getElementById("maploading");
+  if (_badge) _badge.classList.add("hide");
+
+  const ro = new ResizeObserver(() => { fitCanvas(); fitView(); });
+  ro.observe(canvas);
+
+  function nodeAt(sx, sy) {
+    let best = null;
+    for (const n of nodes) {
+      if (!nodeVisible(n)) continue;
+      const dx = n.px-sx, dy = n.py-sy, d = dx*dx+dy*dy, r = n.pr + 6;
+      // Among overlapping dots, pick the one nearest the viewer (largest pz).
+      if (d < r*r && (best === null || n.pz > best.pz)) best = n;
+    }
+    return best;
+  }
+  // Move a dragged dot to the pointer: un-project the screen point back to world
+  // at the dot's current depth, keeping z fixed.
+  function dragTo(mx, my) {
+    const n = dragNode, persp = n.persp || 1;
+    const x2 = (mx - W/2 - cam.x) / (persp * cam.k);
+    const y2 = (my - H/2 - cam.y) / (persp * cam.k);
+    const z2 = n.pz;
+    const cosX = Math.cos(rotX), sinX = Math.sin(rotX), cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+    const y1 = y2*cosX + z2*sinX;
+    const z1 = -y2*sinX + z2*cosX;
+    const x1 = x2;
+    const rx = x1*cosY - z1*sinY;
+    const rz = x1*sinY + z1*cosY;
+    const ry = y1;
+    n.x = W/2 + rx; n.y = H/2 + ry; n.z = is3D ? rz : 0;
+    n.vx = n.vy = n.vz = 0;
+  }
+  const rectPos = ev => { const r = canvas.getBoundingClientRect(); return [ev.clientX-r.left, ev.clientY-r.top]; };
+  const info = document.getElementById("info");
+  function setInfo(n) {
+    if (!n) { info.innerHTML = "Hover a dot to see its name. Click a dot to read it. Bigger dots link to more notes."; return; }
+    const linkTxt = n.links ? n.links + " link" + (n.links === 1 ? "" : "s") : "no links";
+    info.innerHTML = "<b>" + n.label + "</b> &middot; " + n.group + " &middot; " + linkTxt + " &middot; click to read";
+  }
+
+  canvas.addEventListener("mousemove", ev => {
+    const [mx, my] = rectPos(ev);
+    if (dragNode) { lastInteract = performance.now(); dragTo(mx, my); alpha = Math.max(alpha, 0.25); return; }
+    if (rotating) { lastInteract = performance.now(); rotY += (mx - lastM[0]) * 0.006; rotX += (my - lastM[1]) * 0.006; rotX = Math.max(-1.45, Math.min(1.45, rotX)); lastM = [mx, my]; return; }
+    if (panning) { cam.x += mx - lastM[0]; cam.y += my - lastM[1]; lastM = [mx, my]; return; }
+    hover = nodeAt(mx, my);
+    if (hover) setInfo(hover);
+    canvas.style.cursor = hover ? "pointer" : "grab";
+  });
+  const panel = document.getElementById("panel");
+  const plinks = document.getElementById("plinks");
+  const askbtn = document.getElementById("askbtn");
+  let panelNode = null;
+  const escapeHtml = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // Pan the camera so a node sits in the middle of the view.
+  function centerOn(n) { projectAll(); cam.x = -n._sx0 * cam.k; cam.y = -n._sy0 * cam.k; }
+
+  function renderLinks(n) {
+    let html = "";
+    const section = (head, items, broken) => {
+      if (!items.length) return "";
+      const chips = items.map(it => broken
+        ? '<span class="lchip broken" title="This note is linked but does not exist">' + escapeHtml(it) + '</span>'
+        : '<button class="lchip" data-id="' + encodeURIComponent(it.id) + '">' + escapeHtml(it.label) + '</button>'
+      ).join("");
+      return '<div class="lgroup"><div class="lhead">' + head + '</div><div class="chips">' + chips + '</div></div>';
+    };
+    html += section("Linked from (" + n.in.length + ")", n.in, false);
+    html += section("Links to (" + n.out.length + ")", n.out, false);
+    html += section("Broken links (" + n.broken.length + ")", n.broken, true);
+    plinks.innerHTML = html;
+    plinks.querySelectorAll(".lchip[data-id]").forEach(btn => {
+      btn.onclick = () => {
+        const target = byId[decodeURIComponent(btn.dataset.id)];
+        if (target) { selected = target; setInfo(target); centerOn(target); openPanel(target); }
+      };
+    });
+  }
+
+  function openPanel(n) {
+    panelNode = n;
+    document.getElementById("ptitle").textContent = n.label;
+    document.getElementById("pgroup").textContent = n.group;
+    renderLinks(n);
+    const body = document.getElementById("pbody");
+    body.textContent = "Loading…";
+    panel.classList.add("open");
+    fetch("/note?source=" + encodeURIComponent(n.id))
+      .then(r => r.json())
+      .then(d => { body.textContent = d.text || "(this note is empty)"; })
+      .catch(() => { body.textContent = "Could not load this note."; });
+  }
+  // Ask the search brain about the open note (opens the answer on the home page).
+  askbtn.onclick = () => {
+    if (!panelNode) return;
+    const q = "What do my notes say about " + panelNode.label + "?";
+    window.location = "/?ask=" + encodeURIComponent(q);
+  };
+  document.getElementById("pclose").onclick = () => panel.classList.remove("open");
+
+  canvas.addEventListener("mousedown", ev => {
+    const [mx, my] = rectPos(ev);
+    lastInteract = performance.now();
+    const n = nodeAt(mx, my);
+    if (n) { dragNode = n; selected = n; setInfo(n); openPanel(n); }
+    // Background: in 3D plain drag spins the cloud (Shift = pan); in 2D it pans.
+    else if (is3D && !ev.shiftKey) { rotating = true; lastM = [mx, my]; selected = null; setInfo(null); canvas.classList.add("panning"); }
+    else { panning = true; lastM = [mx, my]; selected = null; setInfo(null); canvas.classList.add("panning"); }
+  });
+  window.addEventListener("mouseup", () => { dragNode = null; panning = false; rotating = false; lastInteract = performance.now(); canvas.classList.remove("panning"); });
+
+  function zoomAt(sx, sy, factor) {
+    const oldk = cam.k, nk = Math.max(0.2, Math.min(5, oldk * factor));
+    const sx0 = (sx - W/2 - cam.x) / oldk, sy0 = (sy - H/2 - cam.y) / oldk;
+    cam.k = nk; cam.x = sx - W/2 - sx0 * nk; cam.y = sy - H/2 - sy0 * nk;
+  }
+  canvas.addEventListener("wheel", ev => {
+    ev.preventDefault();
+    lastInteract = performance.now();
+    const [mx, my] = rectPos(ev);
+    zoomAt(mx, my, ev.deltaY < 0 ? 1.12 : 1/1.12);
+  }, { passive: false });
+  document.getElementById("zin").onclick = () => zoomAt(W/2, H/2, 1.25);
+  document.getElementById("zout").onclick = () => zoomAt(W/2, H/2, 1/1.25);
+  document.getElementById("reset").onclick = fitView;
+
+  window.addEventListener("resize", () => { fitCanvas(); alpha = Math.max(alpha, 0.3); });
+
+  // --- Search -----------------------------------------------------------------
+  const searchInput = document.getElementById("search");
+  const scount = document.getElementById("scount");
+  const sclear = document.getElementById("sclear");
+  const searchbox = document.querySelector(".searchbox");
+
+  function applySearch() {
+    query = searchInput.value.trim().toLowerCase();
+    searchbox.classList.toggle("has-text", searchInput.value.length > 0);
+    if (!query) { hitSet = null; scount.textContent = ""; return; }
+    hitSet = new Set();
+    for (const n of nodes) {
+      if ((n.label + " " + n.group).toLowerCase().includes(query)) hitSet.add(n.id);
+    }
+    scount.textContent = hitSet.size + (hitSet.size === 1 ? " match" : " matches");
+  }
+  function clearSearch() {
+    searchInput.value = "";
+    applySearch();
+    searchInput.focus();
+  }
+  searchInput.addEventListener("input", applySearch);
+  searchInput.addEventListener("keydown", (e) => { if (e.key === "Escape") clearSearch(); });
+  sclear.addEventListener("click", clearSearch);
+
+  // --- Settings drawer --------------------------------------------------------
+  const gear = document.getElementById("gear"), settings = document.getElementById("settings");
+  gear.onclick = () => { settings.classList.toggle("open"); gear.classList.toggle("active"); };
+  document.getElementById("setClose").onclick = () => { settings.classList.remove("open"); gear.classList.remove("active"); };
+
+  function reheat() { alpha = Math.max(alpha, 0.35); }
+  const bindCheck = (id, key) => {
+    const el = document.getElementById(id);
+    el.onchange = () => { S[key] = el.checked; reheat(); };
+  };
+  const bindRange = (id, key, reheatOnChange) => {
+    const el = document.getElementById(id);
+    el.oninput = () => { S[key] = parseFloat(el.value); if (reheatOnChange) reheat(); };
+  };
+  bindCheck("tLink", "showLink"); bindCheck("tSim", "showSim"); bindCheck("tOrphan", "showOrphan");
+  bindCheck("tLabel", "showLabel"); bindCheck("tSpin", "spin");
+
+  // 3D / 2D toggle — flatten or re-inflate the cloud.
+  const d3btn = document.getElementById("d3");
+  d3btn.onclick = () => {
+    is3D = !is3D;
+    d3btn.textContent = is3D ? "3D" : "2D";
+    d3btn.classList.toggle("active", is3D);
+    lastInteract = performance.now();
+    if (!is3D) { rotX = 0; rotY = 0; for (const n of nodes) { n.z = 0; n.vz = 0; } }
+    else { rotX = -0.35; rotY = 0.6; for (const n of nodes) n.z = (Math.random()-0.5)*W*0.35; }
+    // Let the cloud settle silently before framing it, so it doesn't drift
+    // out of view the way it would if we fit the not-yet-spread positions.
+    const wasAlpha = alpha; alpha = 0.5;
+    for (let i = 0; i < 200; i++) step();
+    alpha = Math.max(wasAlpha, 0.12);
+    fitView();
+  };
+  bindRange("sSize", "size", false); bindRange("sLabel", "labelZoom", false); bindRange("sLine", "line", false);
+  bindRange("fRepel", "repel", true); bindRange("fRest", "rest", true);
+  bindRange("fSpring", "spring", true); bindRange("fGrav", "grav", true);
+
+  // --- Legend (rebuilds to match "Color by") ----------------------------------
+  const leg = document.getElementById("legend");
+  function renderLegend() {
+    leg.innerHTML = "";
+    let entries;
+    if (S.colorBy === "type") {
+      const present = [...new Set(nodes.map(n => n.type))];
+      entries = present.map(t => [TYPE_LABELS[t] || t, TYPE_COLORS[t] || "#8891a5"]);
+    } else if (S.colorBy === "area") {
+      const present = new Set(nodes.map(n => n.area));
+      entries = areas.filter(a => present.has(a)).map(a => [a, areaColor[a]]);
+    } else {
+      entries = groups.map(g => [g, groupColor[g]]);
+    }
+    for (const [name, color] of entries) {
+      const s = document.createElement("span");
+      s.className = "pill";
+      s.innerHTML = '<span class="dot" style="background:' + color + '"></span>' + name;
+      leg.appendChild(s);
+    }
+  }
+  renderLegend();
+
+  // --- Project filter + colour mode -------------------------------------------
+  const projFilter = document.getElementById("projFilter");
+  const allProjects = GRAPH.projects || [...new Set(nodes.map(n => n.proj))];
+  projFilter.innerHTML = '<option value="all">All projects</option>' +
+    allProjects.map(p => '<option value="' + p + '">' + p + '</option>').join("");
+  projFilter.onchange = () => { S.proj = projFilter.value; reheat(); fitView(); };
+
+  const areaFilter = document.getElementById("areaFilter");
+  areaFilter.innerHTML = '<option value="all">All areas</option>' +
+    areas.map(a => '<option value="' + a + '">' + a + '</option>').join("");
+  areaFilter.onchange = () => { S.area = areaFilter.value; reheat(); fitView(); };
+
+  const colorBy = document.getElementById("colorBy");
+  colorBy.value = S.colorBy;   // reflect the default (Area) in the dropdown
+  colorBy.onchange = () => { S.colorBy = colorBy.value; renderLegend(); };
+  </script>
+</body>
+</html>

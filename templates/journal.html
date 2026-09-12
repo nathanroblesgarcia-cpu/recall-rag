@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recall — Journal</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .maptop { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .maptop h1 { margin: 0; }
+    .maptop .links { display: flex; gap: 18px; }
+    .maptop a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .maptop a:hover { text-decoration: underline; }
+
+    .days { display: flex; flex-direction: column; gap: 16px; margin-top: 22px; }
+    .daycard {
+      background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      border: 1px solid var(--border); border-radius: 14px;
+      padding: 16px 20px 14px; box-shadow: var(--shadow);
+    }
+    .daycard.today { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(108,155,255,0.25), var(--shadow); }
+    .dayhead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    .dtitle { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+    .dcount { color: var(--muted); font-size: 14px; }
+    .todaybadge {
+      font-size: 12px; font-weight: 700; color: #fff; background: var(--accent);
+      padding: 2px 9px; border-radius: 999px;
+    }
+    .dnote {
+      white-space: pre-wrap; margin: 12px 0 6px; padding: 12px 14px;
+      background: rgba(108,155,255,0.08); border-left: 3px solid var(--accent);
+      border-radius: 8px; font-size: 15.5px; line-height: 1.6;
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+    .jchip {
+      padding: 5px 12px; border-radius: 999px; font-size: 13px;
+      background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    }
+    .empty { color: var(--muted); font-size: 14px; margin-top: 10px; font-style: italic; }
+
+    .dsummary {
+      margin: 12px 0 4px; padding: 11px 14px; border-radius: 8px;
+      background: rgba(99, 230, 190, 0.10); border-left: 3px solid #63e6be;
+      font-size: 15px; line-height: 1.55; white-space: pre-wrap;
+    }
+    .cardtools { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+    .sumbtn {
+      margin: 0; padding: 7px 14px; font-size: 13px; font-weight: 600;
+      background: var(--panel); color: var(--accent); border: 1px solid var(--border);
+      box-shadow: none;
+    }
+    .sumbtn:hover { background: var(--panel); border-color: var(--accent); }
+    .sumbtn:disabled { opacity: 0.6; cursor: default; }
+
+    .writer { margin-top: 0; background: transparent; border: 0; padding: 0; flex: 1 1 100%; }
+    .writer summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 14px; }
+    .writer textarea { margin-top: 10px; background: var(--bg); }
+    .writer button { padding: 9px 20px; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="maptop">
+      <h1>Journal</h1>
+      <div class="links">
+        <a href="/">← Back to asking</a>
+        <a href="/map">Mind map</a>
+      </div>
+    </div>
+    <p class="sub readcol">One entry per day. A day is frozen once it is over, so it stays as it was even if you change those notes later. Today is live. You can write your own words for any day.</p>
+
+    <div class="days">
+      {% for day in days %}
+        <div class="daycard {% if day.is_today %}today{% endif %}">
+          <div class="dayhead">
+            <span class="dtitle">{{ day.pretty }}</span>
+            {% if day.is_today %}<span class="todaybadge">Today</span>{% endif %}
+            <span class="dcount">
+              {{ day.activity|length }} note{{ '' if day.activity|length == 1 else 's' }} changed
+            </span>
+          </div>
+
+          <div class="dsummary"{% if not day.summary %} hidden{% endif %}>{% if day.summary %}✨ {{ day.summary }}{% endif %}</div>
+
+          {% if day.note %}<div class="dnote">{{ day.note }}</div>{% endif %}
+
+          {% if day.activity %}
+            <div class="chips">
+              {% for a in day.activity %}<span class="jchip">{{ a.label }}</span>{% endfor %}
+            </div>
+          {% else %}
+            <p class="empty">No notes changed{{ ' yet' if day.is_today else '' }}.</p>
+          {% endif %}
+
+          <div class="cardtools">
+            {% if day.activity %}
+              <button type="button" class="sumbtn" data-date="{{ day.date }}">{{ '↻ Re-summarise' if day.summary else '✨ Summarise this day' }}</button>
+            {% endif %}
+            <details class="writer">
+              <summary>✎ {{ 'Edit note' if day.note else 'Write about this day' }}</summary>
+              <form method="post" action="/journal/note">
+                <input type="hidden" name="date" value="{{ day.date }}">
+                <textarea name="note" rows="3" placeholder="What did you work on, decide, or learn today?">{{ day.note }}</textarea>
+                <button type="submit">Save</button>
+              </form>
+            </details>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </main>
+
+  <script>
+  // "Summarise this day": ask the local model for a 1-3 sentence summary of the
+  // notes changed that day, then show it in the day's card. The model can take
+  // a little while on this machine, so the button shows progress.
+  document.querySelectorAll(".sumbtn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const date = btn.dataset.date;
+      const card = btn.closest(".daycard");
+      const box = card.querySelector(".dsummary");
+      const original = btn.textContent;
+      btn.disabled = true; btn.textContent = "Summarising…";
+      box.hidden = false; box.textContent = "✨ Reading your notes…";
+      try {
+        const resp = await fetch("/journal/summary", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ date }),
+        });
+        const d = await resp.json();
+        if (d.summary) { box.textContent = "✨ " + d.summary; btn.textContent = "↻ Re-summarise"; }
+        else { box.hidden = true; box.textContent = ""; btn.textContent = original;
+               alert("No summary — is the local model (Ollama) running?"); }
+      } catch (e) {
+        box.textContent = "Could not summarise. Check that the local model (Ollama) is running.";
+        btn.textContent = original;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+  </script>
+</body>
+</html>

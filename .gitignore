@@ -1,0 +1,16 @@
+# Secrets
+.env
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Local data (the built search index) and any private typed notes
+data/
+my_notes/
+.fastembed_cache/
+
+# Eval run history is regenerated locally; keep the repo clean
+evals/reports/

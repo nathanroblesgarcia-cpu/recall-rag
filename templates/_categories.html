@@ -1,0 +1,22 @@
+<div class="catmap" id="catmap">
+  <div class="cathead">How your notes are categorised. Change any note's area here — your choice sticks and overrides the automatic sorting.</div>
+  {% for c in categories %}
+    <details class="catarea">
+      <summary><span class="catname">{{ c.area }}</span> <span class="count">({{ c.notes|length }})</span></summary>
+      {% if c.notes %}
+        <ul class="catlist">
+          {% for n in c.notes %}
+            <li>
+              <span class="catnote">{{ n.name }}{% if n.overridden %} <span class="pinned" title="You set this area">📌</span>{% endif %}</span>
+              <select class="areasel" data-source="{{ n.source }}" aria-label="Area for {{ n.name }}">
+                {% for a in areas %}<option value="{{ a }}"{% if a == c.area %} selected{% endif %}>{{ a }}</option>{% endfor %}
+              </select>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="note">No notes in this area.</p>
+      {% endif %}
+    </details>
+  {% endfor %}
+</div>

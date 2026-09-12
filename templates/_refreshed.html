@@ -1,0 +1,26 @@
+{# The "what changed" block after a refresh. Rendered inline on first load and
+   also returned by /refresh_status so a background build can drop it in live. #}
+{% if refreshed %}
+  <div class="refreshmsg">
+    <span class="refreshhead">{{ refreshed.headline }}</span>
+    {% if refreshed.added or refreshed.changed or refreshed.removed %}
+      <ul class="refreshlist">
+        {% for it in refreshed.added %}
+          <li><span class="tag tag-add">added</span> <span class="catnote">{{ it.name }}</span>
+            <select class="areasel" data-source="{{ it.source }}" aria-label="Area for {{ it.name }}">
+              {% for a in areas %}<option value="{{ a }}"{% if a == it.area %} selected{% endif %}>{{ a }}</option>{% endfor %}
+            </select>
+          </li>
+        {% endfor %}
+        {% for it in refreshed.changed %}
+          <li><span class="tag tag-upd">updated</span> <span class="catnote">{{ it.name }}</span>
+            <select class="areasel" data-source="{{ it.source }}" aria-label="Area for {{ it.name }}">
+              {% for a in areas %}<option value="{{ a }}"{% if a == it.area %} selected{% endif %}>{{ a }}</option>{% endfor %}
+            </select>
+          </li>
+        {% endfor %}
+        {% for it in refreshed.removed %}<li><span class="tag tag-rem">removed</span> <span class="catnote">{{ it.name }}</span></li>{% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+{% endif %}
