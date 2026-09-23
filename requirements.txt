@@ -4,3 +4,4 @@ numpy
 requests
 anthropic
 python-dotenv
+mcp

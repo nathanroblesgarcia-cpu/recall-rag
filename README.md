@@ -133,6 +133,25 @@ On the web page, pick **Mode: Notes + live numbers** to use the agent; each step
 ("Searched your notes for ...", "Looked up the café's cash and fund balances")
 appears as it happens, then the answer and the notes it read.
 
+## Use it from Claude Code (MCP)
+
+`mcp_server.py` exposes Recall as [Model Context Protocol](https://modelcontextprotocol.io)
+tools, so an AI coding assistant can search your notes and save new ones mid-task:
+`recall_search`, `recall_ask`, `recall_add_note`, `recall_reindex`, `recall_areas`.
+
+```bash
+claude mcp add recall -- C:\path\to\recall-rag\venv\Scripts\python.exe C:\path\to\recall-rag\mcp_server.py
+ecall-ragenv\Scripts\python.exe C:\path	o
+ecall-rag\mcp_server.py
+```
+
+One lesson baked into its startup: importing the app cold was slow enough to blow
+Claude Code's 30s connect timeout when several MCP servers start together. So the
+app modules load lazily after the handshake (connect time drops sharply). Making
+*everything* lazy deadlocked on Windows: loading numpy's DLL from a worker thread
+while the stdio reader blocks on stdin hangs forever, found with a `faulthandler`
+thread dump. The native packages stay eager on the main thread.
+
 ## Repo layout
 
 | Path | What it is |
@@ -144,6 +163,7 @@ appears as it happens, then the answer and the notes it read.
 | `app.py`, `templates/`, `static/` | the Flask web page |
 | `evals/` | golden set, scorer, LLM-as-judge, reports |
 | `sample_notes/` | the fictional demo corpus (notes) |
+| `mcp_server.py` | MCP server: exposes search / ask / add-note as tools for AI assistants |
 | `config.py` | every setting in one place |
 
 ## Use it on your own notes
