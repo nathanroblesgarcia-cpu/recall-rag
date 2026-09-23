@@ -16,13 +16,19 @@
         placeholder="e.g. What time does the café open on Sundays?">{{ result.question if result else '' }}</textarea>
       <div class="askrow">
         <button type="submit">Ask</button>
-        <label class="modelpick">Ask about
+        <label class="modelpick">Mode
+          <select id="modePick" name="mode">
+            <option value="notes">Notes only</option>
+            <option value="agent">Notes + live numbers</option>
+          </select>
+        </label>
+        <label class="modelpick" id="areaLabel">Ask about
           <select id="areaPick" name="area">
             <option value="Everything">Everything</option>
             {% for a in areas %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
           </select>
         </label>
-        <label class="modelpick">Answer style
+        <label class="modelpick" id="modelLabel">Answer style
           <select id="modelPick" name="model"></select>
         </label>
         <span class="modelhint" id="modelHint"></span>
@@ -70,6 +76,10 @@
     </details>
 
     <div id="live" style="display:none">
+      <section class="agentsteps" id="liveStepsWrap" style="display:none">
+        <h2>What it did</h2>
+        <ol id="liveSteps"></ol>
+      </section>
       <section class="answer">
         <h2>Answer</h2>
         <p id="liveAnswer"></p>
@@ -169,8 +179,15 @@
           if (m.name === pick) o.selected = true;
           modelPick.appendChild(o);
         });
-        const setHint = () => { if (modelHint) modelHint.textContent = hint[modelPick.value] || ""; };
+        const setHint = () => {
+          if (!modelHint) return;
+          if (modePick && modePick.value === "agent") return;  // agent mode shows its own hint
+          modelHint.textContent = hint[modelPick.value] || "";
+        };
         setHint();
+        modelPick.addEventListener("refreshhint", setHint);
+        const ml = document.getElementById("modelLabel");
+        if (ml && modePick && modePick.value === "agent") ml.style.display = "none";
         modelPick.addEventListener("change", () => {
           localStorage.setItem("recallModel", modelPick.value);
           setHint();
@@ -224,6 +241,51 @@
       }
     });
 
+    // Mode picker (v1.19): "Notes only" = the fast streamed answer from your
+    // notes. "Notes + live numbers" = the agent, which can also look up your
+    // café numbers (sales, costs, profit, cash) and decides what to use. The agent
+    // runs its own model and searches all notes, so the area and answer-style
+    // pickers are hidden in that mode. Choice is remembered.
+    const modePick = document.getElementById("modePick");
+    const AGENT_HINT = "Can also check the café's sales, costs, profit and cash. Slower: about 1 to 2 minutes.";
+    function applyMode() {
+      const agentMode = modePick && modePick.value === "agent";
+      const al = document.getElementById("areaLabel"), ml = document.getElementById("modelLabel");
+      if (al) al.style.display = agentMode ? "none" : "";
+      if (ml && modelPick && modelPick.options.length) ml.style.display = agentMode ? "none" : "";
+      if (agentMode) { if (modelHint) modelHint.textContent = AGENT_HINT; }
+      else if (modelPick) modelPick.dispatchEvent(new Event("refreshhint"));
+    }
+    if (modePick) {
+      let savedMode = null;
+      try { savedMode = localStorage.getItem("recallMode"); } catch (_) {}
+      if (savedMode && [...modePick.options].some(o => o.value === savedMode)) modePick.value = savedMode;
+      modePick.addEventListener("change", () => {
+        try { localStorage.setItem("recallMode", modePick.value); } catch (_) {}
+        applyMode();
+      });
+      applyMode();
+    }
+
+    // Plain-word labels for each agent step.
+    const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    function monthWord(m) {
+      const x = /^(\d{4})-(\d{2})$/.exec(m || "");
+      return x ? MONTHS[parseInt(x[2], 10) - 1] + " " + x[1] : "";
+    }
+    function stepLabel(ev) {
+      const a = ev.args || {}, when = monthWord(a.month);
+      const inMonth = when ? " for " + when : "";
+      switch (ev.name) {
+        case "search_notes": return 'Searched your notes for "' + (a.query || "") + '"';
+        case "cafe_sales": return "Looked up café sales" + inMonth;
+        case "cafe_expenses": return "Looked up café costs" + (a.category ? " for " + a.category : "") + inMonth;
+        case "cafe_profit": return "Looked up café profit" + inMonth;
+        case "cafe_cash_position": return "Looked up the café's cash and fund balances";
+        default: return "Used " + ev.name;
+      }
+    }
+
     function renderSources(el, sources) {
       el.innerHTML = "";
       if (!sources || !sources.length) return;
@@ -235,8 +297,11 @@
         if (i === 0) d.open = true;
         const sum = document.createElement("summary");
         const f = document.createElement("span"); f.className = "file"; f.textContent = s.source;
-        const sc = document.createElement("span"); sc.className = "score"; sc.textContent = Number(s.score).toFixed(3);
-        sum.appendChild(f); sum.appendChild(sc);
+        sum.appendChild(f);
+        if (s.score !== undefined && s.score !== null) {
+          const sc = document.createElement("span"); sc.className = "score"; sc.textContent = Number(s.score).toFixed(3);
+          sum.appendChild(sc);
+        }
         const pre = document.createElement("pre"); pre.textContent = s.text || "";
         d.appendChild(sum); d.appendChild(pre); el.appendChild(d);
       });
@@ -248,6 +313,62 @@
       const live = document.getElementById("live");
       const ansEl = document.getElementById("liveAnswer");
       const srcEl = document.getElementById("liveSources");
+      const stepsWrap = document.getElementById("liveStepsWrap");
+      const stepsEl = document.getElementById("liveSteps");
+
+      // Agent mode: read the step-by-step stream (one JSON object per line),
+      // list each step as it happens, then show the answer and the notes read.
+      async function askAgent(question) {
+        stepsWrap.style.display = "block";
+        const spin = start(
+          ["Deciding what to look up…", "Looking things up…", "Reading what it found…", "Writing your answer…"],
+          "Checks your notes and the café numbers. This can take 1 to 2 minutes."
+        );
+        const notes = [];
+        const addStep = (text, cls) => {
+          const li = document.createElement("li");
+          li.textContent = text;
+          if (cls) li.className = cls;
+          stepsEl.appendChild(li);
+        };
+        const handle = (ev) => {
+          if (ev.type === "tool") { addStep(stepLabel(ev)); msg.textContent = "Looking things up…"; }
+          else if (ev.type === "notes") { ev.notes.forEach(n => notes.push(n)); renderSources(srcEl, notes); }
+          else if (ev.type === "nudge") addStep("Tried to answer without looking, so it was sent back to check first", "muted");
+          else if (ev.type === "thinking" && stepsEl.children.length) msg.textContent = "Writing your answer…";
+          else if (ev.type === "answer") ansEl.textContent = ev.answer || "";
+          else if (ev.type === "error") ansEl.textContent = "Something went wrong: " + ev.error;
+        };
+        try {
+          const resp = await fetch("/ask_agent", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ question }),
+          });
+          const reader = resp.body.getReader();
+          const dec = new TextDecoder();
+          let buf = "";
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            let nl;
+            while ((nl = buf.indexOf("\n")) >= 0) {
+              const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+              if (line) { try { handle(JSON.parse(line)); } catch (_) {} }
+            }
+          }
+          if (buf.trim()) { try { handle(JSON.parse(buf)); } catch (_) {} }
+        } catch (err) {
+          ansEl.textContent = "Something went wrong reaching the answer engine.";
+        } finally {
+          stop(spin);
+          if (!stepsEl.children.length) addStep("Answered without looking anything up", "muted");
+          if (!ansEl.textContent.trim()) {
+            ansEl.innerHTML = '<span class="note">No answer this time. Check that the local model server (Ollama) is running.</span>';
+          }
+        }
+      }
 
       ask.addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -257,6 +378,9 @@
         ansEl.textContent = "";
         srcEl.innerHTML = "";
         live.style.display = "block";
+        stepsWrap.style.display = "none";
+        stepsEl.innerHTML = "";
+        if (modePick && modePick.value === "agent") { await askAgent(question); return; }
         // Now that a question has been asked, the app is remembering it — so the
         // "Start fresh" control becomes relevant. The AJAX ask never reloads the
         // page, so reveal it here instead of relying on a server re-render.

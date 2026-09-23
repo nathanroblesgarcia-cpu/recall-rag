@@ -134,25 +134,49 @@ def categorised_notes():
     return [{"area": name, "notes": by_area[name]} for name, _ in config.AREAS]
 
 
-def _load_all_chunks():
-    """Pull every chunk and its vector out of SQLite into memory.
+# In-memory copy of every chunk + vector (v1.16 speed fix). Re-reading every
+# chunk from disk on each search gets slow as a note set grows. Now it is read once and reused
+# until the index changes. Stored as (signature, chunks, matrix).
+_CHUNK_CACHE = None
 
-    With a few hundred chunks this is instant. When your corpus grows into the
-    tens of thousands, this is the moment you switch to pgvector (Phase 2 of the
-    plan) so the database does the search instead of Python. Not yet.
+
+def _index_signature(conn):
+    """A cheap fingerprint of the chunks table: (row count, highest id). Any note
+    added, changed (deleted + re-inserted with new ids) or removed moves one of
+    them. Works across processes, so a note saved by the MCP server or a refresh
+    in the web app is picked up on the very next search."""
+    return conn.execute("SELECT COUNT(*), COALESCE(MAX(id), 0) FROM chunks").fetchone()
+
+
+def _load_all_chunks():
+    """Every chunk and its vector, from the in-memory cache when the index has
+    not changed, otherwise freshly read from SQLite.
+
+    Callers must treat the returned list and matrix as read-only (retrieve
+    builds new lists/copies, never edits them in place).
+
+    When your corpus grows much bigger, this is the moment you switch to
+    pgvector (Phase 2 of the plan) so the database does the search instead of
+    Python. Not yet.
     """
+    global _CHUNK_CACHE
     conn = _db()
+    sig = _index_signature(conn)
+    if _CHUNK_CACHE is not None and _CHUNK_CACHE[0] == sig:
+        conn.close()
+        return _CHUNK_CACHE[1], _CHUNK_CACHE[2]
     rows = conn.execute(
-        "SELECT source, chunk_index, text, embedding FROM chunks"
+        "SELECT id, source, chunk_index, text, embedding FROM chunks"
     ).fetchall()
     conn.close()
 
     chunks = []
     vectors = []
-    for source, idx, text, blob in rows:
-        chunks.append({"source": source, "chunk_index": idx, "text": text})
+    for cid, source, idx, text, blob in rows:
+        chunks.append({"id": cid, "source": source, "chunk_index": idx, "text": text})
         vectors.append(np.frombuffer(blob, dtype=np.float32))
     matrix = np.vstack(vectors) if vectors else np.empty((0, config.EMBED_DIMS))
+    _CHUNK_CACHE = (sig, chunks, matrix)
     return chunks, matrix
 
 
@@ -301,15 +325,130 @@ def retrieve(question, top_k=None, history=None, area=None):
     # a score from -1 (opposite) to 1 (identical meaning), one score per chunk.
     scores = matrix @ q
 
-    # Take the indices of the highest-scoring chunks.
-    top_idx = np.argsort(scores)[::-1][:top_k]
+    # Rank every chunk by meaning, best first.
+    order = np.argsort(scores)[::-1]
+
+    # With reranking on, gather a wider shortlist first, then let the reranker
+    # pick the best top_k from it.
+    n = max(top_k, config.RERANK_POOL) if config.RERANK else top_k
+    if not config.HYBRID_SEARCH:
+        top_idx = [int(i) for i in order[:n]]
+        found_by = {i: "meaning" for i in top_idx}
+    else:
+        top_idx, found_by = _fuse(order, _keyword_search(search_text), chunks, n)
+
+    if config.RERANK:
+        top_idx = _rerank(search_text, top_idx, chunks)[:top_k]
 
     results = []
     for i in top_idx:
         item = dict(chunks[i])
+        # The score shown stays the meaning score (0 to 1), so the page reads the
+        # same; the ORDER is what hybrid changes.
         item["score"] = float(scores[i])
+        item["found_by"] = found_by[int(i)]
         results.append(item)
     return results
+
+
+_RERANKER = None
+
+
+def _rerank(question, idx, chunks):
+    """RERANKING (v1.17): a second, closer read of the shortlist.
+
+    The first searches score the question and each chunk SEPARATELY (meaning
+    numbers, word counts) - fast, but rough. A reranker (a cross-encoder) reads
+    the question and one chunk TOGETHER and scores how well that chunk answers
+    it. Too slow to run on every chunk, fine on a shortlist of ~20. Loaded
+    on first use only, so the app starts as fast as before."""
+    global _RERANKER
+    if not idx:
+        return idx
+    try:
+        if _RERANKER is None:
+            from fastembed.rerank.cross_encoder import TextCrossEncoder
+            _RERANKER = TextCrossEncoder(model_name=config.RERANK_MODEL)
+        texts = [chunks[i]["text"] for i in idx]
+        scores = list(_RERANKER.rerank(question, texts))
+    except Exception as e:
+        print(f"[rerank] skipped: {e}")  # never let reranking break an answer
+        return idx
+    return [i for _, i in sorted(zip(scores, idx), key=lambda p: p[0], reverse=True)]
+
+
+# Small words that carry no search value on their own. Word-search drops them so
+# "What is the port for BeanCount?" searches for just 'port' and 'beancount'.
+_STOPWORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "am", "do", "does",
+    "did", "what", "which", "who", "whom", "whose", "when", "where", "why", "how",
+    "i", "me", "my", "mine", "we", "our", "you", "your", "it", "its", "this", "that",
+    "these", "those", "of", "in", "on", "at", "to", "for", "from", "by", "with",
+    "and", "or", "not", "no", "so", "if", "about", "into", "than", "then", "there",
+    "can", "could", "should", "would", "will", "has", "have", "had", "much", "many",
+    "any", "some", "tell", "please", "use", "uses", "used", "run", "runs", "s",
+}
+
+_FTS_READY = False
+
+
+def _keyword_search(text, limit=None):
+    """WORD-SEARCH half of hybrid: SQLite FTS5 over the chunk text, ranked by
+    BM25 (rare words that appear often in a chunk score highest). Returns chunk
+    ids, best first. Any word may match (OR), so one exact name like 'Verde' is
+    enough to pull a chunk in."""
+    global _FTS_READY
+    limit = limit or config.HYBRID_POOL
+    words = [w for w in re.findall(r"[a-z0-9]+", text.lower())
+             if w not in _STOPWORDS and (len(w) > 1 or w.isdigit())]
+    if not words:
+        return []
+    # Quote each word so FTS treats it as plain text, never as query syntax.
+    match = " OR ".join(f'"{w}"' for w in dict.fromkeys(words))
+    conn = _db()
+    try:
+        if not _FTS_READY:
+            import ingest
+            ingest.ensure_fts(conn)  # first run builds the word index from existing chunks
+            _FTS_READY = True
+        rows = conn.execute(
+            "SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH ? "
+            "ORDER BY bm25(chunks_fts) LIMIT ?",
+            (match, limit),
+        ).fetchall()
+    except sqlite3.OperationalError as e:
+        print(f"[keyword_search] skipped: {e}")  # never let word-search break an answer
+        rows = []
+    finally:
+        conn.close()
+    return [r[0] for r in rows]
+
+
+def _fuse(meaning_order, keyword_ids, chunks, top_k):
+    """Merge the two ranked lists with Reciprocal Rank Fusion (RRF).
+
+    Each list gives a chunk 1 / (RRF_K + rank). A chunk near the top of BOTH
+    lists adds up two big shares and wins; a chunk only one list liked still
+    counts. RRF only looks at ranks, so the two searches' very different score
+    scales never need to be compared. Returns (chunk positions, found_by)."""
+    k = config.RRF_K
+    pool = config.HYBRID_POOL
+    fused, found = {}, {}
+    for rank, i in enumerate(meaning_order[:pool], start=1):
+        i = int(i)
+        fused[i] = fused.get(i, 0.0) + 1.0 / (k + rank)
+        found[i] = "meaning"
+    # Map chunk ids to positions in `chunks` (the area filter may have narrowed
+    # it, so a keyword hit outside the chosen area is simply skipped).
+    pos = {c["id"]: n for n, c in enumerate(chunks)}
+    for rank, cid in enumerate(keyword_ids, start=1):
+        i = pos.get(cid)
+        if i is None:
+            continue
+        fused[i] = fused.get(i, 0.0) + config.KEYWORD_WEIGHT / (k + rank)
+        found[i] = "both" if i in found else "words"
+    best = sorted(fused, key=fused.get, reverse=True)[:top_k]
+    return best, found
 
 
 def _build_prompt(question, retrieved, history=None):

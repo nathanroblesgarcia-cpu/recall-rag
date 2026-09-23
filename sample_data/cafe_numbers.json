@@ -1,0 +1,24 @@
+{
+  "_about": "FICTIONAL demo numbers for Ember & Oak Coffee (Sam Carter's made-up café). Used by cafe_tools.py so the agent has 'live' numbers to look up beside the notes. Amounts are US dollars. Costs follow the monthly budget in sample_notes/money_budget.md.",
+  "months": {
+    "2026-06": {
+      "sales": {"coffee drinks": 15200, "retail beans": 2300, "pastries": 2100},
+      "drinks_sold": 3480,
+      "expenses": {"rent": 2400, "wages": 9000, "green beans": 2850, "milk and pastries": 1750, "utilities": 680}
+    },
+    "2026-07": {
+      "sales": {"coffee drinks": 16050, "retail beans": 2480, "pastries": 2230},
+      "drinks_sold": 3690,
+      "expenses": {"rent": 2400, "wages": 9150, "green beans": 3120, "milk and pastries": 1820, "utilities": 710}
+    },
+    "2026-08": {
+      "sales": {"coffee drinks": 15640, "retail beans": 2610, "pastries": 2190},
+      "drinks_sold": 3590,
+      "expenses": {"rent": 2400, "wages": 9000, "green beans": 3240, "milk and pastries": 1790, "utilities": 695}
+    }
+  },
+  "cash_position": {
+    "as_of": "2026-08-31",
+    "accounts": {"operating account": 7850, "emergency fund": 14400, "expansion fund": 2000}
+  }
+}

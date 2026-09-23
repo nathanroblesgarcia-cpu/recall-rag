@@ -1,0 +1,78 @@
+{
+  "description": "Agent quiz for agent.py: one agent with note search + number tools. Everything is FICTIONAL (sample_notes/ + sample_data/cafe_numbers.json, Ember & Oak Coffee). Each item lists the tools it MUST call (expected_tools), note facts the answer must contain (expected_facts, same format as golden.json), optional forbidden_facts (near-miss wrong answers a substring check would pass), and whether the answer must quote a number a tool actually returned in that run (grounded_number).",
+  "items": [
+    {
+      "id": "notes-ef-target",
+      "kind": "notes",
+      "question": "What is my emergency fund target?",
+      "expected_tools": ["search_notes"],
+      "expected_facts": [["25,000", "25000", "25k"]],
+      "grounded_number": false
+    },
+    {
+      "id": "notes-sunday-open",
+      "kind": "notes",
+      "question": "What time does the café open on Sundays?",
+      "expected_tools": ["search_notes"],
+      "expected_facts": [["8am", "8 am", "8:00"]],
+      "forbidden_facts": ["6am", "6 am"],
+      "grounded_number": false
+    },
+    {
+      "id": "notes-verde-decaf",
+      "kind": "notes",
+      "question": "What process does Verde use for our decaf?",
+      "expected_tools": ["search_notes"],
+      "expected_facts": [["sugarcane"]],
+      "grounded_number": false
+    },
+    {
+      "id": "numbers-aug-sales",
+      "kind": "numbers",
+      "question": "What were the café's total sales in August 2026?",
+      "expected_tools": ["cafe_sales"],
+      "expected_facts": [["20,440", "20440"]],
+      "grounded_number": true
+    },
+    {
+      "id": "numbers-jul-beans",
+      "kind": "numbers",
+      "question": "How much did we spend on green beans in July 2026?",
+      "expected_tools": ["cafe_expenses"],
+      "expected_facts": [["3,120", "3120"]],
+      "grounded_number": true
+    },
+    {
+      "id": "numbers-cash",
+      "kind": "numbers",
+      "question": "How much cash does the café have across all its accounts right now?",
+      "expected_tools": ["cafe_cash_position"],
+      "expected_facts": [["24,250", "24250"]],
+      "grounded_number": true
+    },
+    {
+      "id": "mixed-ef-now-vs-target",
+      "kind": "mixed",
+      "question": "How much is in the emergency fund now, and what is my target?",
+      "expected_tools": ["cafe_cash_position", "search_notes"],
+      "expected_facts": [["14,400", "14400"], ["25,000", "25000", "25k"]],
+      "grounded_number": true
+    },
+    {
+      "id": "mixed-profit-vs-setaside",
+      "kind": "mixed",
+      "question": "What was the café's profit in August 2026, and how much do I set aside each month?",
+      "expected_tools": ["cafe_profit", "search_notes"],
+      "expected_facts": [["3,315", "3315"], ["1,200", "1200"]],
+      "grounded_number": true
+    },
+    {
+      "id": "mixed-beans-vs-order",
+      "kind": "mixed",
+      "question": "How much did we spend on green beans in August 2026, and what is our biggest standing order with Highland?",
+      "expected_tools": ["cafe_expenses", "search_notes"],
+      "expected_facts": [["3,240", "3240"], ["240 kg", "240kg"]],
+      "grounded_number": true
+    }
+  ]
+}

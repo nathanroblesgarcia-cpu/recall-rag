@@ -129,10 +129,17 @@ def summarise(results, retrieval_only):
     """Roll the per-item results up into the headline numbers."""
     total = len(results)
     hits = sum(1 for r in results if r["retrieval_hit"])
+    # Rank quality, not just hit/miss. MRR = average of 1/rank (1.0 = the right note
+    # is always first; a miss counts 0). Top-3 = right note in the first three,
+    # which is what the answer model reads most closely.
+    mrr = sum(1 / r["retrieval_rank"] for r in results if r["retrieval_rank"]) / total if total else 0.0
+    top3 = sum(1 for r in results if r["retrieval_rank"] and r["retrieval_rank"] <= 3)
     summary = {
         "total_questions": total,
         "retrieval_hits": hits,
         "retrieval_hit_rate": round(hits / total, 3) if total else 0.0,
+        "retrieval_top3": top3,
+        "retrieval_mrr": round(mrr, 3),
         "total_seconds": round(sum(r["seconds"] for r in results), 1),
     }
     if not retrieval_only:
@@ -159,6 +166,8 @@ def render_markdown(summary, results, retrieval_only, model, when):
     lines.append("")
     lines.append(f"- Retrieval hit rate: **{summary['retrieval_hits']}/{summary['total_questions']}** "
                  f"({summary['retrieval_hit_rate']*100:.0f}%) - the right note was pulled in")
+    lines.append(f"- Right note in top 3: **{summary['retrieval_top3']}/{summary['total_questions']}**")
+    lines.append(f"- Rank score (MRR): **{summary['retrieval_mrr']:.3f}** - 1.000 means the right note is always first")
     if not retrieval_only:
         lines.append(f"- Answer pass rate: **{summary['answer_passes']}/{summary['total_questions']}** "
                      f"({summary['answer_pass_rate']*100:.0f}%) - every required fact present")
@@ -235,6 +244,8 @@ def main():
     print("\n" + "=" * 50)
     print(f"Retrieval hit rate: {summary['retrieval_hits']}/{summary['total_questions']} "
           f"({summary['retrieval_hit_rate']*100:.0f}%)")
+    print(f"Right note top 3:   {summary['retrieval_top3']}/{summary['total_questions']}")
+    print(f"Rank score (MRR):   {summary['retrieval_mrr']:.3f}")
     if not args.retrieval_only:
         print(f"Answer pass rate:   {summary['answer_passes']}/{summary['total_questions']} "
               f"({summary['answer_pass_rate']*100:.0f}%)")

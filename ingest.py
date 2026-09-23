@@ -184,7 +184,43 @@ def _connect():
     conn.execute("CREATE INDEX IF NOT EXISTS idx_chunks_source ON chunks(source)")
     # Remembers each note's last-modified time so we only re-embed what changed.
     conn.execute("CREATE TABLE IF NOT EXISTS files (source TEXT PRIMARY KEY, mtime REAL)")
+    ensure_fts(conn)
     return conn
+
+
+def ensure_fts(conn):
+    """Create the WORD-SEARCH index beside the meaning-search one (hybrid search).
+
+    chunks_fts is SQLite's built-in full-text search (FTS5) over the same chunk
+    text. It finds exact words and codes (a supplier name, a port, a date) that
+    meaning-search can blur. It stores no copy of the text (content='chunks'),
+    and three triggers keep it in step with the chunks table automatically, so
+    every existing insert/delete in ingest, indexer and build_progress keeps it
+    current with no other code changes. The first time it is created it is
+    filled from the chunks already there, so nothing needs re-embedding."""
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='chunks_fts'"
+    ).fetchone()
+    conn.execute(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5("
+        "text, content='chunks', content_rowid='id', tokenize='porter unicode61')"
+    )
+    conn.execute(
+        "CREATE TRIGGER IF NOT EXISTS chunks_fts_ai AFTER INSERT ON chunks BEGIN "
+        "INSERT INTO chunks_fts(rowid, text) VALUES (new.id, new.text); END"
+    )
+    conn.execute(
+        "CREATE TRIGGER IF NOT EXISTS chunks_fts_ad AFTER DELETE ON chunks BEGIN "
+        "INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES ('delete', old.id, old.text); END"
+    )
+    conn.execute(
+        "CREATE TRIGGER IF NOT EXISTS chunks_fts_au AFTER UPDATE ON chunks BEGIN "
+        "INSERT INTO chunks_fts(chunks_fts, rowid, text) VALUES ('delete', old.id, old.text); "
+        "INSERT INTO chunks_fts(rowid, text) VALUES (new.id, new.text); END"
+    )
+    if not exists:
+        conn.execute("INSERT INTO chunks_fts(chunks_fts) VALUES ('rebuild')")
+    conn.commit()
 
 
 def current_files():
@@ -281,6 +317,9 @@ def build_index(embedder=None):
         conn.execute("PRAGMA busy_timeout=30000")
         conn.execute("DROP TABLE IF EXISTS chunks")
         conn.execute("DROP TABLE IF EXISTS files")
+        # The word index points at chunk ids, which restart after a full rebuild,
+        # so drop it too; _connect recreates and refills it.
+        conn.execute("DROP TABLE IF EXISTS chunks_fts")
         conn.commit()
         conn.close()
     print("Indexing all notes (one-time full build)...")

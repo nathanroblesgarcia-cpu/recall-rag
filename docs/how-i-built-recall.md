@@ -60,7 +60,10 @@ my own scoring.
 - Chunk on markdown headings instead of blank lines, so a chunk is always a whole
   section.
 - Rewrite the question before retrieving, to expand short questions.
-- Add a re-ranking pass over the top chunks before answering.
+- Add a re-ranking pass over the top chunks before answering. (Done since, and
+  measured: it was not worth its cost here. See
+  [What my evals caught](what-my-evals-caught.md), which also covers hybrid search
+  and the agent.)
 - Move the search into Postgres with pgvector once the note count outgrows loading
   every embedding into memory.
 

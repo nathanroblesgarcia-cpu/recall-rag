@@ -4,114 +4,324 @@
     {
       "id": "ef-target",
       "question": "What is my emergency fund target?",
-      "expected_sources": ["money_savings_plan"],
-      "expected_facts": [["25,000", "25000", "25k"]],
+      "expected_sources": [
+        "money_savings_plan"
+      ],
+      "expected_facts": [
+        [
+          "25,000",
+          "25000",
+          "25k"
+        ]
+      ],
       "tests": "Money - numeric goal about the user ('my')"
     },
     {
       "id": "savings-monthly",
       "question": "How much do I set aside each month?",
-      "expected_sources": ["money_savings_plan"],
-      "expected_facts": [["1,200", "1200"]],
+      "expected_sources": [
+        "money_savings_plan"
+      ],
+      "expected_facts": [
+        [
+          "1,200",
+          "1200"
+        ]
+      ],
       "tests": "Money - monthly amount"
     },
     {
       "id": "loyalty-app-port",
       "question": "Which port does the BeanCount loyalty app run on?",
-      "expected_sources": ["side_project_loyalty_app"],
-      "expected_facts": ["5240"],
+      "expected_sources": [
+        "side_project_loyalty_app"
+      ],
+      "expected_facts": [
+        "5240"
+      ],
       "tests": "Side projects - config fact"
     },
     {
       "id": "espresso-log-port",
       "question": "What port does my home espresso dial-in log run on?",
-      "expected_sources": ["side_project_home_espresso"],
-      "expected_facts": ["5230"],
+      "expected_sources": [
+        "side_project_home_espresso"
+      ],
+      "expected_facts": [
+        "5230"
+      ],
       "tests": "Side projects - distinguishing two apps"
     },
     {
       "id": "head-roaster",
       "question": "Who is our head roaster and my mentor?",
-      "expected_sources": ["team_maria"],
-      "expected_facts": [["maria"]],
+      "expected_sources": [
+        "team_maria"
+      ],
+      "expected_facts": [
+        [
+          "maria"
+        ]
+      ],
       "tests": "Team - person lookup"
     },
     {
       "id": "scheduling-tool",
       "question": "Which tool does Dan use to build the staff schedule?",
-      "expected_sources": ["team_dan"],
-      "expected_facts": [["deputy"]],
+      "expected_sources": [
+        "team_dan"
+      ],
+      "expected_facts": [
+        [
+          "deputy"
+        ]
+      ],
       "tests": "Team - person-to-tool mapping"
     },
     {
       "id": "highland-order",
       "question": "How much Ethiopian coffee do we order each month from Highland?",
-      "expected_sources": ["supplier_highland"],
-      "expected_facts": [["240"]],
+      "expected_sources": [
+        "supplier_highland"
+      ],
+      "expected_facts": [
+        [
+          "240"
+        ]
+      ],
       "tests": "Suppliers - exact quantity"
     },
     {
       "id": "verde-moq",
       "question": "What is the minimum order from Verde Importers?",
-      "expected_sources": ["supplier_verde"],
-      "expected_facts": [["60"]],
+      "expected_sources": [
+        "supplier_verde"
+      ],
+      "expected_facts": [
+        [
+          "60"
+        ]
+      ],
       "tests": "Suppliers - minimum order quantity"
     },
     {
       "id": "sunday-open",
       "question": "What time does the café open on Sundays?",
-      "expected_sources": ["ops_opening_hours"],
-      "expected_facts": [["8am", "8 am", "8:00", "eight"]],
+      "expected_sources": [
+        "ops_opening_hours"
+      ],
+      "expected_facts": [
+        [
+          "8am",
+          "8 am",
+          "8:00",
+          "eight"
+        ]
+      ],
       "tests": "Shop - opening-hours quirk"
     },
     {
       "id": "machine-incident",
       "question": "Why did the espresso machine go down in May?",
-      "expected_sources": ["ops_equipment_incident"],
-      "expected_facts": [["breaker", "circuit", "overload"]],
+      "expected_sources": [
+        "ops_equipment_incident"
+      ],
+      "expected_facts": [
+        [
+          "breaker",
+          "circuit",
+          "overload"
+        ]
+      ],
       "tests": "Shop - incident root cause"
     },
     {
       "id": "espresso-recipe",
       "question": "What is our standard espresso shot recipe?",
-      "expected_sources": ["ops_standards"],
-      "expected_facts": [["18"], ["36"]],
+      "expected_sources": [
+        "ops_standards"
+      ],
+      "expected_facts": [
+        [
+          "18"
+        ],
+        [
+          "36"
+        ]
+      ],
       "tests": "Shop - recipe, two required numbers"
     },
     {
       "id": "milk-temp",
       "question": "What temperature do we steam milk to?",
-      "expected_sources": ["ops_standards"],
-      "expected_facts": [["65"]],
+      "expected_sources": [
+        "ops_standards"
+      ],
+      "expected_facts": [
+        [
+          "65"
+        ]
+      ],
       "tests": "Shop - house standard"
     },
     {
       "id": "pourover-ratio",
       "question": "What is our pour-over brew ratio?",
-      "expected_sources": ["reference_brew_guide"],
-      "expected_facts": [["1:16", "1 to 16", "16"]],
+      "expected_sources": [
+        "reference_brew_guide"
+      ],
+      "expected_facts": [
+        [
+          "1:16",
+          "1 to 16",
+          "16"
+        ]
+      ],
       "tests": "Recipes - brew ratio"
     },
     {
       "id": "first-crack-temp",
       "question": "Around what temperature does first crack start?",
-      "expected_sources": ["reference_roast_profiles"],
-      "expected_facts": [["196"]],
+      "expected_sources": [
+        "reference_roast_profiles"
+      ],
+      "expected_facts": [
+        [
+          "196"
+        ]
+      ],
       "tests": "Recipes - roast fact"
     },
     {
       "id": "pos-system",
       "question": "Which point-of-sale system does the café use?",
-      "expected_sources": ["ops_pos_system"],
-      "expected_facts": [["square"]],
+      "expected_sources": [
+        "ops_pos_system"
+      ],
+      "expected_facts": [
+        [
+          "square"
+        ]
+      ],
       "tests": "Shop - system lookup"
     },
     {
       "id": "second-location-year",
       "question": "What year do we hope to open a second café?",
-      "expected_sources": ["personal_home"],
-      "expected_facts": [["2027"]],
+      "expected_sources": [
+        "personal_home"
+      ],
+      "expected_facts": [
+        [
+          "2027"
+        ]
+      ],
       "tests": "Personal - plan date"
+    },
+    {
+      "id": "verde-decaf-process",
+      "question": "What process is our decaf?",
+      "expected_sources": [
+        "supplier_verde"
+      ],
+      "expected_facts": [
+        [
+          "sugarcane"
+        ]
+      ],
+      "tests": "Exact word - a rare process name (added for hybrid search)"
+    },
+    {
+      "id": "decaf-importer",
+      "question": "Which importer do we use for decaf?",
+      "expected_sources": [
+        "supplier_verde"
+      ],
+      "expected_facts": [
+        [
+          "verde"
+        ]
+      ],
+      "tests": "Exact name - supplier name (added for hybrid search)"
+    },
+    {
+      "id": "machine-down-date",
+      "question": "On what date did the espresso machine die?",
+      "expected_sources": [
+        "ops_equipment_incident"
+      ],
+      "expected_facts": [
+        [
+          "2026-05-10",
+          "10 may",
+          "may 10"
+        ]
+      ],
+      "tests": "Exact code - an ISO date (added for hybrid search)"
+    },
+    {
+      "id": "beancount-replaced",
+      "question": "What did BeanCount replace?",
+      "expected_sources": [
+        "side_project_loyalty_app"
+      ],
+      "expected_facts": [
+        [
+          "punch card"
+        ]
+      ],
+      "tests": "Exact name - made-up product word (added for hybrid search)"
+    },
+    {
+      "id": "maria-weekly",
+      "question": "What does Maria run every week?",
+      "expected_sources": [
+        "team_maria"
+      ],
+      "expected_facts": [
+        [
+          "cupping"
+        ]
+      ],
+      "tests": "Exact name - person + a trade term (added for hybrid search)"
+    },
+    {
+      "id": "drawer-flag",
+      "question": "Who gets flagged when the cash drawer is more than five dollars out?",
+      "expected_sources": [
+        "ops_pos_system"
+      ],
+      "expected_facts": [
+        [
+          "dan"
+        ]
+      ],
+      "tests": "Exact rule lookup - small figure in a process note (added for hybrid search)"
+    },
+    {
+      "id": "bean-rest",
+      "question": "How long should roasted beans rest before brewing?",
+      "expected_sources": [
+        "reference_roast_profiles"
+      ],
+      "expected_facts": [
+        [
+          "3 days",
+          "three days"
+        ]
+      ],
+      "tests": "Exact number in a reference list (added for hybrid search)"
+    },
+    {
+      "id": "medium-drop-temp",
+      "question": "At what temperature do we drop a medium roast?",
+      "expected_sources": [
+        "reference_roast_profiles"
+      ],
+      "expected_facts": [
+        "210"
+      ],
+      "tests": "Exact number - one of several temperatures in the notes (added for hybrid search)"
     }
   ]
 }

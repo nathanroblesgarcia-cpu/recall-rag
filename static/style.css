@@ -266,3 +266,9 @@ pre {
   margin: 12px 0 2px;
   font: 14.5px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
+
+/* Agent mode (v1.19): the step-by-step "What it did" list. */
+.agentsteps { margin-top: 18px; }
+.agentsteps ol { margin: 6px 0 0; padding-left: 22px; color: var(--text); }
+.agentsteps li { margin: 4px 0; line-height: 1.45; }
+.agentsteps li.muted { color: var(--muted); font-style: italic; }

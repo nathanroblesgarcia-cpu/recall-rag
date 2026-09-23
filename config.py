@@ -85,6 +85,31 @@ CHUNK_CHAR_TARGET = 800
 # How many of the closest chunks to find and show.
 TOP_K = 8
 
+# HYBRID SEARCH (v1.15). Run meaning-search AND word-search (SQLite FTS5), then
+# merge the two ranked lists. A chunk ranked high in both rises to the top.
+# Set HYBRID_SEARCH = False to go back to meaning-only (handy for A/B evals).
+HYBRID_SEARCH = True
+# How deep each list goes before merging. 20 beat 50 in testing: deep
+# word-search results are mostly common-word noise.
+HYBRID_POOL = 20
+# The merge is Reciprocal Rank Fusion: each list gives a chunk 1 / (RRF_K + rank).
+# 60 is the standard value from the original paper; smaller = top ranks count more.
+RRF_K = 60
+# How much the word-search list counts in the merge, vs 1.0 for meaning-search.
+# 0.7 = words break ties and rescue exact names and codes, meaning still leads.
+# Picked from a small settings sweep on the eval (see evals/README.md).
+KEYWORD_WEIGHT = 0.7
+
+# RERANKING (v1.17). After search, a small model re-reads the top RERANK_POOL
+# chunks alongside the question and re-sorts them; the best TOP_K go on.
+# OFF by decision: in testing it nudged rank quality up a little but did not
+# change which notes reached the answer model's top 3, and made each search
+# much slower. Worth it only when the right note is NOT
+# already reaching the answer model. Turn on and re-run the eval to check.
+RERANK = False
+RERANK_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
+RERANK_POOL = 20
+
 # How many of those chunks to actually feed the answer model, and how much of
 # each. More/longer context = the model can actually see the answer even when
 # it is spread across several notes.

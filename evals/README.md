@@ -10,7 +10,11 @@ makes it worse. That is what these evals do.
 Each question in `golden.json` is scored on two independent things:
 
 1. **Retrieval** — did the right note get pulled into the sources? This is the
-   core RAG metric and needs no answer model, so it runs in seconds.
+   core RAG metric and needs no answer model, so it runs in seconds. Reported
+   three ways: **hit rate** (found at all), **top 3** (found in the first three),
+   and **MRR** (mean reciprocal rank: 1.0 means the right note is always first).
+   Hit rate alone hides rank problems; a note found at rank 6 "passes" but may
+   never reach the answer model.
 2. **Answer** — did the written answer actually contain the known facts?
 
 ## The files
@@ -21,6 +25,8 @@ Each question in `golden.json` is scored on two independent things:
 | `run_eval.py` | asks each question, scores retrieval and answer, writes a report |
 | `judge.py` | an LLM-as-judge pass: a stronger local model grades each answer |
 | `rejudge.py` | compares the judge against the plain fact-check to find disagreements |
+| `agent_golden.json` | the agent quiz: notes-only, numbers-only and mixed questions |
+| `agent_eval.py` | grades `agent.py`: tool routing, note facts, grounded numbers |
 | `reports/` | timestamped run history (gitignored) |
 
 ## Run it
@@ -30,7 +36,25 @@ python run_eval.py                  # retrieval + answer
 python run_eval.py --retrieval-only # fast: retrieval only, no answer model
 python run_eval.py --limit 5        # first 5 questions
 python judge.py                     # LLM-as-judge grading
+python agent_eval.py                # the agent quiz
 ```
+
+## The agent quiz
+
+`agent_eval.py` checks each answer from `agent.py` three ways:
+
+1. **Routing** — did it call every tool the question needs (notes, numbers, or both)?
+2. **Facts** — does the answer contain the known facts, and none of the listed
+   `forbidden_facts`? The forbidden list exists because a substring check passes
+   near-misses: "2040" is inside "the 2040s", a whole decade instead of one year.
+3. **Grounded numbers** — does the answer quote a figure a number tool actually
+   returned in that run? Numbers are checked against the tool's own output, never
+   hard-coded, so this catches made-up figures.
+
+Building the agent against this quiz is what surfaced its guards: it answered
+without looking anything up (and once described a note that did not exist), it
+wrote a tool call as plain text instead of making it, and it re-worded dates.
+Each is now caught in code, not just discouraged in the prompt.
 
 ## Why two scorers (substring and LLM-as-judge)
 
@@ -40,6 +64,13 @@ even though it is correct. The **LLM-as-judge** reads the question, the required
 fact, and the answer, and gives a verdict, so it accepts correct answers phrased
 differently. Running both and looking at where they disagree (`rejudge.py`) is how
 you find both real misses and scorer blind spots.
+
+## A result worth keeping: hybrid search on a tiny corpus
+
+On this 16-note demo set, meaning-only and hybrid search both score 24/24 with
+MRR 1.0: every question has one obvious note, so there is nothing for exact-word
+search to rescue. A demo corpus proves the pipeline is wired correctly; it cannot prove a
+retrieval upgrade helps. You need a corpus messy enough to fail.
 
 ## How to extend it
 

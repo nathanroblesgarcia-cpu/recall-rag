@@ -2,6 +2,7 @@
 # The web page. A simple single-user Flask app.
 #   GET  /      shows the question box
 #   POST /ask   runs the RAG pipeline and shows the answer + sources
+#   POST /ask_agent  notes + live numbers (the agent), streamed step by step
 
 import json
 import os
@@ -122,6 +123,43 @@ def ask_stream():
         del HISTORY[:-3]
 
     return Response(gen(), mimetype="text/plain; charset=utf-8")
+
+
+@app.route("/ask_agent", methods=["POST"])
+def ask_agent():
+    """Notes + live numbers mode (v1.19): the agent (agent.py) decides whether to
+    search notes, call the café number tools (cafe_tools.py), or both. It is slow on CPU
+    (a 7B model, several rounds), so each step is streamed to the page as one
+    JSON line the moment it happens, then a final {"type": "answer"} line.
+    Stand-alone questions only: follow-up memory belongs to Notes-only mode."""
+    import queue
+    import agent
+
+    question = (request.form.get("question") or "").strip()
+    if not question:
+        return Response("", mimetype="application/x-ndjson")
+
+    events = queue.Queue()
+
+    def work():
+        try:
+            out = agent.ask(question, verbose=False, on_step=events.put)
+            events.put({"type": "answer", "answer": out["answer"]})
+        except Exception as exc:
+            events.put({"type": "error", "error": str(exc)})
+        finally:
+            events.put(None)
+
+    threading.Thread(target=work, daemon=True).start()
+
+    def gen():
+        while True:
+            ev = events.get()
+            if ev is None:
+                break
+            yield json.dumps(ev, ensure_ascii=False, default=str) + "\n"
+
+    return Response(gen(), mimetype="application/x-ndjson; charset=utf-8")
 
 
 @app.route("/refresh", methods=["POST"])
