@@ -331,6 +331,9 @@ def retrieve(question, top_k=None, history=None, area=None):
     # With reranking on, gather a wider shortlist first, then let the reranker
     # pick the best top_k from it.
     n = max(top_k, config.RERANK_POOL) if config.RERANK else top_k
+    cap = config.MAX_PIECES_PER_NOTE
+    if cap:
+        n = max(n, top_k * 4)  # a wider list, so the cap still leaves top_k to pick
     if not config.HYBRID_SEARCH:
         top_idx = [int(i) for i in order[:n]]
         found_by = {i: "meaning" for i in top_idx}
@@ -338,7 +341,8 @@ def retrieve(question, top_k=None, history=None, area=None):
         top_idx, found_by = _fuse(order, _keyword_search(search_text), chunks, n)
 
     if config.RERANK:
-        top_idx = _rerank(search_text, top_idx, chunks)[:top_k]
+        top_idx = _rerank(search_text, top_idx, chunks)
+    top_idx = _cap_per_note(top_idx, chunks, cap)[:top_k]
 
     results = []
     for i in top_idx:
@@ -349,6 +353,20 @@ def retrieve(question, top_k=None, history=None, area=None):
         item["found_by"] = found_by[int(i)]
         results.append(item)
     return results
+
+
+def _cap_per_note(idx, chunks, cap):
+    """Keep the ranking order, but let no single note fill more than `cap`
+    places. Pieces over the cap are skipped so other notes move up."""
+    if not cap:
+        return list(idx)
+    seen, kept = {}, []
+    for i in idx:
+        src = chunks[i]["source"]
+        if seen.get(src, 0) < cap:
+            kept.append(i)
+            seen[src] = seen.get(src, 0) + 1
+    return kept
 
 
 _RERANKER = None
@@ -593,8 +611,10 @@ def _generate_anthropic(prompt):
     return resp.content[0].text
 
 
-def _stream_ollama(prompt, model=None):
-    """Yield the answer from the local Ollama server piece by piece as it writes."""
+def _stream_ollama(prompt, model=None, usage=None):
+    """Yield the answer from the local Ollama server piece by piece as it writes.
+    If `usage` (a dict) is given, the token counts from Ollama's last message are
+    written into it, for tracing."""
     import json
     import requests
 
@@ -625,10 +645,13 @@ def _stream_ollama(prompt, model=None):
             if chunk:
                 yield chunk
             if data.get("done"):
+                if usage is not None:
+                    import tracing
+                    usage.update(tracing.usage_from(data))
                 break
 
 
-def generate_stream(question, retrieved, history=None, model=None):
+def generate_stream(question, retrieved, history=None, model=None, usage=None):
     """Yield the answer in small pieces, so the page can show it as it writes.
     Yields nothing when there is no engine or no notes."""
     if config.GEN_BACKEND == "none" or not retrieved:
@@ -636,7 +659,9 @@ def generate_stream(question, retrieved, history=None, model=None):
     prompt = _build_prompt(question, retrieved, history)
     try:
         if config.GEN_BACKEND == "ollama":
-            yield from _stream_ollama(prompt, model=model)
+            if usage is not None:
+                usage["prompt_chars"] = len(prompt)
+            yield from _stream_ollama(prompt, model=model, usage=usage)
         elif config.GEN_BACKEND == "anthropic":
             text = _generate_anthropic(prompt)  # cloud path returns all at once
             if text:

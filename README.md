@@ -99,6 +99,37 @@ eval to see what hybrid search does there.
 Each eval writes a timestamped report to `evals/reports/`, so you can see whether
 a change made a score go up or down. See [`evals/README.md`](evals/README.md).
 
+## Tracing: the record behind every answer
+
+The eval says *that* a score moved. A trace says *why*. `tracing.py` writes one
+line per question to `data/traces.jsonl` (gitignored), and the `/traces` page
+shows it:
+
+- which note pieces the search found, with their scores
+- each model round: time, tokens in and out, and what it decided (call a tool or answer)
+- the model's time split three ways: **loading** the model, **reading** the prompt, **writing** the answer
+- each tool call and what came back
+- every guard that fired (for example "answered without looking, sent back to search")
+
+Three things the traces caught, each checked with the full quiz before and after:
+
+1. **One note was filling most of the prompt.** Search often returned several
+   pieces of the same note, crowding out other relevant notes. Capping it at
+   2 pieces per note (`MAX_PIECES_PER_NOTE` in `config.py`) raised the answer pass
+   rate and broke no question that passed before.
+2. **Reading the prompt, not searching, is the slow part.** On a CPU-only laptop,
+   search is quick and most of the wait is the model reading the prompt. Sending
+   fewer pieces made answers noticeably faster, but the quiz showed it dropping
+   answers it used to get right. It was rejected, and the prompt stays at 6 pieces.
+3. **A guard lost half an answer.** On the café question *"How much is in the
+   emergency fund now, and what is my target?"*, the agent was sent back to
+   search its notes, found the target, and then forgot the balance a tool had
+   already given it. The "go back" message now tells it to keep every figure it
+   already has. Agent eval back to 9/9.
+
+The second one is the reason to run the quiz before and after every change: the
+speed fix looked like a clear win until the scores came in.
+
 ## Run it yourself
 
 Requires Python 3.12 and (for local answers) [Ollama](https://ollama.com).
@@ -161,6 +192,7 @@ thread dump. The native packages stay eager on the main thread.
 | `agent.py` | the agent: notes + number tools in one tool-calling loop |
 | `cafe_tools.py`, `sample_data/` | read-only number tools over FICTIONAL café figures |
 | `app.py`, `templates/`, `static/` | the Flask web page |
+| `tracing.py` | records every step behind each answer; view at `/traces` |
 | `evals/` | golden set, scorer, LLM-as-judge, reports |
 | `sample_notes/` | the fictional demo corpus (notes) |
 | `mcp_server.py` | MCP server: exposes search / ask / add-note as tools for AI assistants |

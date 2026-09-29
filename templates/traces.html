@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recall — Traces</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .maptop { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .maptop h1 { margin: 0; }
+    .maptop .links { display: flex; gap: 18px; }
+    .maptop a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .maptop a:hover { text-decoration: underline; }
+
+    .traces { display: flex; flex-direction: column; gap: 12px; margin-top: 22px; }
+    details.tr {
+      background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      border: 1px solid var(--border); border-radius: 14px;
+      box-shadow: var(--shadow);
+    }
+    details.tr.bad { border-color: #d9822b; }
+    details.tr summary {
+      cursor: pointer; list-style: none; padding: 14px 18px;
+      display: grid; grid-template-columns: 1fr auto; gap: 4px 16px;
+    }
+    details.tr summary::-webkit-details-marker { display: none; }
+    .q { font-weight: 600; overflow-wrap: anywhere; }
+    .meta { color: var(--muted); font-size: 14px; }
+    .nums { color: var(--muted); font-size: 14px; text-align: right; white-space: nowrap; }
+    .nums b { color: var(--text); }
+    .pill {
+      display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px;
+      border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border);
+      margin-right: 6px;
+    }
+    .pill.agent { color: var(--accent); border-color: var(--accent); }
+    .pill.warn { color: #f0a04b; border-color: #f0a04b; }
+
+    .body { padding: 0 18px 16px; }
+    .step {
+      display: grid; grid-template-columns: 90px 1fr 90px; gap: 12px;
+      align-items: start; padding: 8px 0; border-top: 1px solid var(--border); font-size: 15px;
+    }
+    .kind { font-weight: 700; text-transform: uppercase; font-size: 12px; letter-spacing: 0.05em; padding-top: 3px; }
+    .kind.search { color: #7fd1b9; }
+    .kind.model  { color: var(--accent); }
+    .kind.tool   { color: #c49bff; }
+    .kind.guard  { color: #f0a04b; }
+    .ms { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .bar { height: 5px; border-radius: 3px; background: var(--accent); opacity: 0.6; margin-top: 6px; }
+    .detail { overflow-wrap: anywhere; }
+    .detail ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+    .answer {
+      white-space: pre-wrap; margin-top: 10px; padding: 10px 12px; border-radius: 10px;
+      background: var(--bg); border: 1px solid var(--border); font-size: 15px;
+    }
+    .err { color: #ff8a80; }
+    .empty { color: var(--muted); margin-top: 28px; }
+    @media (max-width: 640px) {
+      details.tr summary { grid-template-columns: 1fr; }
+      .nums { text-align: left; }
+      .step { grid-template-columns: 70px 1fr; }
+      .ms { grid-column: 2; text-align: left; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <div class="maptop">
+    <h1>Traces</h1>
+    <div class="links">
+      <a href="/">← Back to asking</a>
+      <a href="/journal">Journal</a>
+    </div>
+  </div>
+  <p class="sub">The record of every step behind your recent answers. Open one to see what was found, what the model decided, and where the time went.</p>
+
+  {% if not traces %}
+    <p class="empty">No traces yet. Ask a question on the main page and it will show up here.</p>
+  {% endif %}
+
+  <div class="traces">
+  {% for t in traces %}
+    {% set guards = t.steps | selectattr("kind", "equalto", "guard") | list %}
+    {% set slow = t.total_ms or 1 %}
+    <details class="tr{% if t.error or guards %} bad{% endif %}">
+      <summary>
+        <div>
+          <div class="q">{{ t.question }}</div>
+          <div class="meta">
+            <span class="pill{% if t.mode == 'agent' %} agent{% endif %}">{{ 'Notes + numbers' if t.mode == 'agent' else 'Notes' }}</span>
+            {% if guards %}<span class="pill warn">{{ guards|length }} guard{{ 's' if guards|length > 1 }}</span>{% endif %}
+            {% if t.error %}<span class="pill warn">error</span>{% endif %}
+            {{ t.at.replace('T', ' ') }} &middot; {{ t.model or '' }}
+          </div>
+        </div>
+        <div class="nums">
+          <b>{{ '%.1f' % (t.total_ms / 1000) }} s</b><br>
+          {{ t.tokens_in or 0 }} in &middot; {{ t.tokens_out or 0 }} out tokens
+        </div>
+      </summary>
+      <div class="body">
+        {% for s in t.steps %}
+        <div class="step">
+          <div class="kind {{ s.kind }}">{{ s.kind }}</div>
+          <div class="detail">
+            {% if s.kind == 'search' %}
+              Found {{ s.found|length }} note pieces{% if s.area %} (area: {{ s.area }}){% endif %}
+              <ul>{% for f in s.found %}<li>{{ f.source }} &middot; {{ f.score }}</li>{% endfor %}</ul>
+            {% elif s.kind == 'model' %}
+              Round {{ s.round }}{% if s.decided %}: <b>{{ s.decided }}</b>{% endif %}
+              {% if s.tokens_in %}<br><span class="meta">{{ s.tokens_in }} tokens in, {{ s.tokens_out }} out{% if s.first_word_ms %}, first word after {{ '%.1f' % (s.first_word_ms / 1000) }} s{% endif %}</span>{% endif %}
+              {% if s.read_ms is not none and s.read_ms is defined %}<br><span class="meta">Loading model {{ '%.1f' % ((s.load_ms or 0) / 1000) }} s &middot; reading desk {{ '%.1f' % (s.read_ms / 1000) }} s &middot; writing answer {{ '%.1f' % ((s.write_ms or 0) / 1000) }} s</span>{% endif %}
+            {% elif s.kind == 'tool' %}
+              <b>{{ s.name }}</b> {{ s.args | tojson }}
+              {% if s.found %}<ul>{% for f in s.found %}<li>{{ f }}</li>{% endfor %}</ul>{% endif %}
+              {% if s.result %}<ul><li>{{ s.result }}</li></ul>{% endif %}
+            {% elif s.kind == 'guard' %}
+              {{ s.which }}
+            {% endif %}
+            {% if s.error %}<div class="err">{{ s.error }}</div>{% endif %}
+            {% if s.ms is defined %}<div class="bar" style="width: {{ [2, (s.ms / slow * 100)|round]|max }}%"></div>{% endif %}
+          </div>
+          <div class="ms">{% if s.ms is defined %}{{ '%.1f' % (s.ms / 1000) }} s{% endif %}</div>
+        </div>
+        {% endfor %}
+        {% if t.error %}<div class="err">Error: {{ t.error }}</div>{% endif %}
+        {% if t.answer %}<div class="answer">{{ t.answer }}</div>{% endif %}
+      </div>
+    </details>
+  {% endfor %}
+  </div>
+</main>
+</body>
+</html>

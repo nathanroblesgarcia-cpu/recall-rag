@@ -34,6 +34,7 @@ import requests
 
 import cafe_tools
 import config
+import tracing
 
 # The model that runs the tool-calling loop. qwen2.5:7b handles tools reliably;
 # llama3.2:3b is faster but flakier at deciding tool calls, so we use the 7B here.
@@ -137,6 +138,22 @@ def search_notes(query=""):
     }
 
 
+def _run_tool(fn, args):
+    if fn not in DISPATCH:
+        return {"error": f"unknown tool {fn}"}
+    return DISPATCH[fn](**args)
+
+
+def _tool_summary(fn, result):
+    """What is worth seeing in a trace from one tool's result: for note search,
+    which notes came back; for number tools, a short preview of the numbers."""
+    if isinstance(result, dict) and result.get("error"):
+        return {"error": result["error"]}
+    if fn == "search_notes" and isinstance(result, dict):
+        return {"found": [n["source"] for n in result.get("notes", [])]}
+    return {"result": tracing._short(result)}
+
+
 # Maps a tool name (as the model calls it) to the real Python function.
 DISPATCH = {
     "search_notes": search_notes,
@@ -178,8 +195,25 @@ def _system_prompt():
     )
 
 
-def _chat(messages, use_tools=True):
-    """One call to the local Ollama chat API. Returns the assistant message dict."""
+def _chat(messages, use_tools=True, trace=None, round_no=None):
+    """One call to the local Ollama chat API. Returns the assistant message dict.
+    With a trace, the round is recorded: time, tokens in/out, what it decided."""
+    if trace is None:
+        return _chat_raw(messages, use_tools)[0]
+    with trace.step("model", round=round_no, tools_offered=use_tools) as rec:
+        msg, usage = _chat_raw(messages, use_tools)
+        rec.update(usage)
+        calls = msg.get("tool_calls") or []
+        if calls:
+            rec["decided"] = "call " + ", ".join(c["function"]["name"] for c in calls)
+        else:
+            rec["decided"] = "write answer"
+            rec["text"] = tracing._short(msg.get("content") or "", 200)
+    return msg
+
+
+def _chat_raw(messages, use_tools=True):
+    """The actual HTTP call. Returns (message dict, token usage dict)."""
     payload = {
         "model": AGENT_MODEL,
         "messages": messages,
@@ -191,7 +225,8 @@ def _chat(messages, use_tools=True):
         payload["tools"] = TOOL_SCHEMAS
     resp = requests.post(config.OLLAMA_URL, json=payload, timeout=300)
     resp.raise_for_status()
-    return resp.json()["message"]
+    body = resp.json()
+    return body["message"], tracing.usage_from(body)
 
 
 # Phrases that mean "I looked in the notes" or "it's not there" (see GUARD 3).
@@ -232,7 +267,7 @@ def _text_tool_call(content):
     return [{"function": {"name": name, "arguments": args}}]
 
 
-def ask(question, verbose=True, on_step=None):
+def ask(question, verbose=True, on_step=None, trace=None):
     """
     Answer one question, using tools when needed.
 
@@ -244,6 +279,7 @@ def ask(question, verbose=True, on_step=None):
       {"type": "tool", "name", "args"}          about to run a tool
       {"type": "notes", "notes": [...]}         what search_notes returned
       {"type": "nudge"}                         it tried to answer without looking
+    trace, if given (a tracing.Trace), records every round, tool and guard.
     """
     def emit(ev):
         if on_step:
@@ -260,13 +296,15 @@ def ask(question, verbose=True, on_step=None):
 
     for step in range(MAX_STEPS):
         emit({"type": "thinking"})
-        msg = _chat(messages, use_tools=True)
+        msg = _chat(messages, use_tools=True, trace=trace, round_no=step + 1)
         calls = msg.get("tool_calls") or []
         if not calls:
             calls = _text_tool_call(msg.get("content"))
             if calls:
                 if verbose:
                     print("  -> tool call arrived as plain text; running it for real")
+                if trace:
+                    trace.note("guard", which="tool call written as text, run for real")
                 msg = {"role": "assistant", "content": "", "tool_calls": calls}
 
         # GUARD: answering with no tool at all means answering from the model's
@@ -278,6 +316,8 @@ def ask(question, verbose=True, on_step=None):
             if verbose:
                 print("  -> no tool called; asking it to look first")
             emit({"type": "nudge"})
+            if trace:
+                trace.note("guard", which="answered without looking, sent back to search")
             messages.append({"role": "assistant", "content": msg.get("content") or ""})
             messages.append({"role": "user", "content": (
                 "You have not looked anything up yet, so you do not know the answer. "
@@ -292,6 +332,8 @@ def ask(question, verbose=True, on_step=None):
         if not calls and not tools_used:
             if verbose:
                 print("  -> still no tool; running search_notes for it")
+            if trace:
+                trace.note("guard", which="still no tool, ran search_notes for it")
             calls = [{"function": {"name": "search_notes", "arguments": {"query": question}}}]
             msg = {"role": "assistant", "content": "", "tool_calls": calls}
 
@@ -306,11 +348,14 @@ def ask(question, verbose=True, on_step=None):
                 print("  -> talked about notes without searching; asking it to search")
             notes_nudged = True
             emit({"type": "nudge"})
+            if trace:
+                trace.note("guard", which="talked about notes without searching, sent back")
             messages.append({"role": "assistant", "content": msg.get("content") or ""})
             messages.append({"role": "user", "content": (
                 "You mentioned the notes but have not searched them. Call "
-                "search_notes for the part of the question that is written down, "
-                "then answer from what it returns."
+                "search_notes for the part of the question that is written down. "
+                "Then answer the WHOLE question: keep every figure a tool already "
+                "gave you, and add what the notes say."
             )})
             continue
 
@@ -335,10 +380,17 @@ def ask(question, verbose=True, on_step=None):
             if verbose:
                 print(f"  -> tool: {fn}({args})")
             emit({"type": "tool", "name": fn, "args": args})
+            rec = {}
             try:
-                result = DISPATCH[fn](**args) if fn in DISPATCH else {"error": f"unknown tool {fn}"}
+                if trace:
+                    with trace.step("tool", name=fn, args=args) as rec:
+                        result = _run_tool(fn, args)
+                else:
+                    result = _run_tool(fn, args)
             except Exception as e:
                 result = {"error": str(e)}
+            if trace:
+                rec.update(_tool_summary(fn, result))
             tools_used.append({"name": fn, "args": args, "result": result})
             if fn == "search_notes" and isinstance(result, dict) and result.get("notes"):
                 emit({"type": "notes", "notes": result["notes"]})
@@ -346,7 +398,9 @@ def ask(question, verbose=True, on_step=None):
 
     # Ran out of steps: ask once more without tools to force a written answer.
     emit({"type": "thinking"})
-    msg = _chat(messages, use_tools=False)
+    if trace:
+        trace.note("guard", which=f"hit the {MAX_STEPS}-round limit, forced an answer")
+    msg = _chat(messages, use_tools=False, trace=trace, round_no="final")
     return {"answer": (msg.get("content") or "").strip(), "tools_used": tools_used}
 
 

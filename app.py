@@ -3,10 +3,12 @@
 #   GET  /      shows the question box
 #   POST /ask   runs the RAG pipeline and shows the answer + sources
 #   POST /ask_agent  notes + live numbers (the agent), streamed step by step
+#   GET  /traces     the record of every step behind recent answers
 
 import json
 import os
 import threading
+import time
 
 from flask import Flask, render_template, request, jsonify, Response, redirect
 
@@ -15,6 +17,7 @@ import indexer
 import ingest
 import journal
 import rag
+import tracing
 
 app = Flask(__name__)
 
@@ -105,7 +108,10 @@ def ask_stream():
 
     model = (request.form.get("model") or "").strip() or None
     area = (request.form.get("area") or "").strip() or None
-    retrieved = rag.retrieve(question, history=HISTORY, area=area)
+    tr = tracing.Trace(question, mode="notes", model=model or config.OLLAMA_MODEL)
+    with tr.step("search", area=area) as rec:
+        retrieved = rag.retrieve(question, history=HISTORY, area=area)
+        rec["found"] = [{"source": r["source"], "score": round(r["score"], 3)} for r in retrieved]
     header = json.dumps({
         "sources": [
             {"source": r["source"], "score": r["score"], "text": r["text"]}
@@ -116,9 +122,22 @@ def ask_stream():
     def gen():
         yield header + "\n"
         collected = []
-        for delta in rag.generate_stream(question, retrieved, history=HISTORY, model=model):
-            collected.append(delta)
-            yield delta
+        usage = {}
+        error = None
+        try:
+            with tr.step("model", round=1) as rec:
+                start = time.perf_counter()
+                for delta in rag.generate_stream(question, retrieved, history=HISTORY, model=model, usage=usage):
+                    if not collected:
+                        rec["first_word_ms"] = round((time.perf_counter() - start) * 1000)
+                    collected.append(delta)
+                    yield delta
+                rec.update(usage)
+        except Exception as exc:
+            error = exc
+            raise
+        finally:
+            tr.finish("".join(collected), error=error)
         HISTORY.append({"question": question, "answer": "".join(collected)})
         del HISTORY[:-3]
 
@@ -142,12 +161,17 @@ def ask_agent():
     events = queue.Queue()
 
     def work():
+        tr = tracing.Trace(question, mode="agent", model=agent.AGENT_MODEL)
+        answer, error = None, None
         try:
-            out = agent.ask(question, verbose=False, on_step=events.put)
-            events.put({"type": "answer", "answer": out["answer"]})
+            out = agent.ask(question, verbose=False, on_step=events.put, trace=tr)
+            answer = out["answer"]
+            events.put({"type": "answer", "answer": answer})
         except Exception as exc:
+            error = exc
             events.put({"type": "error", "error": str(exc)})
         finally:
+            tr.finish(answer, error=error)
             events.put(None)
 
     threading.Thread(target=work, daemon=True).start()
@@ -160,6 +184,12 @@ def ask_agent():
             yield json.dumps(ev, ensure_ascii=False, default=str) + "\n"
 
     return Response(gen(), mimetype="application/x-ndjson; charset=utf-8")
+
+
+@app.route("/traces")
+def traces_view():
+    """The record behind recent answers: every step, its time and its tokens."""
+    return render_template("traces.html", traces=tracing.recent())
 
 
 @app.route("/refresh", methods=["POST"])

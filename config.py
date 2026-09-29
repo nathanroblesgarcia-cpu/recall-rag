@@ -85,6 +85,11 @@ CHUNK_CHAR_TARGET = 800
 # How many of the closest chunks to find and show.
 TOP_K = 8
 
+# At most this many pieces from any ONE note (v1.23). Tracing showed one file
+# taking 4 of 5 places, so the desk held one note repeated instead of several
+# different notes. The freed places go to the next best OTHER notes. 0 = off.
+MAX_PIECES_PER_NOTE = 2
+
 # HYBRID SEARCH (v1.15). Run meaning-search AND word-search (SQLite FTS5), then
 # merge the two ranked lists. A chunk ranked high in both rises to the top.
 # Set HYBRID_SEARCH = False to go back to meaning-only (handy for A/B evals).
