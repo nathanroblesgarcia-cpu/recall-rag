@@ -19,11 +19,16 @@
 # disagreements are where you inspect whether the judge earned its keep.
 
 import json
+import os
 import re
+import time
 
 import requests
+from dotenv import load_dotenv
 
 import config
+
+load_dotenv()  # so GEMINI_API_KEY is available for the optional Gemini judge
 
 VALID = ("correct", "partial", "incorrect")
 
@@ -153,9 +158,57 @@ def _parse(text):
     return {"verdict": "incorrect", "reason": "unparseable judge reply: " + (text or "")[:120]}
 
 
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+
+def _ask_gemini(messages, model):
+    """Send the same judge conversation to Google Gemini instead of the local model.
+
+    Why a cloud judge at all? A local 7B grading a local 3B is two small models
+    agreeing with each other. A much larger model from a different family is an
+    independent second opinion: where it and the local judge disagree is exactly
+    where a human should look. The quiz is fictional sample data, so sending it
+    out is harmless. Needs GEMINI_API_KEY in your .env (free key from Google AI
+    Studio). Uses plain requests, no extra package.
+    """
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        raise RuntimeError("GEMINI_API_KEY is not set in your .env")
+    # Gemini takes the system prompt separately and calls the assistant "model".
+    system = next(m["content"] for m in messages if m["role"] == "system")
+    contents = [
+        {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
+        for m in messages if m["role"] != "system"
+    ]
+    body = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": contents,
+        "generationConfig": {"temperature": 0, "responseMimeType": "application/json"},
+    }
+    # The key goes in a header, never the URL, so it can't end up in logs.
+    headers = {"x-goog-api-key": key}
+    # Free-tier Gemini answers 429 (rate limit) or 503 (busy). A per-minute limit
+    # or a busy model clears in seconds, so wait and retry. A per-DAY limit (the
+    # free tier allows only a handful of requests per model per day) will not
+    # clear until tomorrow, so stop at once instead of retrying for minutes.
+    for attempt in range(5):
+        resp = requests.post(GEMINI_URL.format(model=model), json=body, headers=headers, timeout=120)
+        if resp.status_code == 429 and "PerDay" in resp.text:
+            raise RuntimeError(f"Gemini free-tier DAILY limit reached for {model}; try another model or tomorrow")
+        if resp.status_code not in (429, 503) or attempt == 4:
+            break
+        time.sleep(5 * 2 ** attempt)
+    resp.raise_for_status()
+    parts = resp.json()["candidates"][0]["content"]["parts"]
+    return "".join(p.get("text", "") for p in parts)
+
+
 def judge(question, requirement, answer, model=None):
     """Grade one answer. Returns {"verdict", "reason"}. verdict is one of
-    correct/partial/incorrect, or "error" if the judge model was unreachable."""
+    correct/partial/incorrect, or "error" if the judge model was unreachable.
+
+    model: an Ollama model name (local), or any name starting with "gemini"
+    (e.g. gemini-flash-latest) to grade with Google Gemini instead."""
     if not answer:
         return {"verdict": "incorrect", "reason": "no answer produced"}
     user = (
@@ -167,11 +220,17 @@ def judge(question, requirement, answer, model=None):
     messages = [{"role": "system", "content": SYSTEM}]
     messages.extend(_fewshot_messages())
     messages.append({"role": "user", "content": user})
+    model = model or config.JUDGE_MODEL
+    if model.startswith("gemini"):
+        try:
+            return _parse(_ask_gemini(messages, model))
+        except Exception as e:
+            return {"verdict": "error", "reason": f"judge unavailable: {e}"}
     try:
         resp = requests.post(
             config.OLLAMA_URL,
             json={
-                "model": model or config.JUDGE_MODEL,
+                "model": model,
                 "messages": messages,
                 "stream": False,
                 "keep_alive": config.OLLAMA_KEEP_ALIVE,

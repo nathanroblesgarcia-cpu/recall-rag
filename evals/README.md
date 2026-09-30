@@ -24,7 +24,7 @@ Each question in `golden.json` is scored on two independent things:
 | `golden.json` | the quiz: questions whose answers are known from the sample notes |
 | `run_eval.py` | asks each question, scores retrieval and answer, writes a report |
 | `judge.py` | an LLM-as-judge pass: a stronger local model grades each answer |
-| `rejudge.py` | compares the judge against the plain fact-check to find disagreements |
+| `rejudge.py` | compares the judge against the plain fact-check, and optionally against a second judge (`--compare`) |
 | `agent_golden.json` | the agent quiz: notes-only, numbers-only and mixed questions |
 | `agent_eval.py` | grades `agent.py`: tool routing, note facts, grounded numbers |
 | `reports/` | timestamped run history (gitignored) |
@@ -36,6 +36,7 @@ python run_eval.py                  # retrieval + answer
 python run_eval.py --retrieval-only # fast: retrieval only, no answer model
 python run_eval.py --limit 5        # first 5 questions
 python judge.py                     # LLM-as-judge grading
+python rejudge.py --compare gemini-flash-latest  # judge the judge (needs GEMINI_API_KEY)
 python agent_eval.py                # the agent quiz
 ```
 
@@ -64,6 +65,25 @@ even though it is correct. The **LLM-as-judge** reads the question, the required
 fact, and the answer, and gives a verdict, so it accepts correct answers phrased
 differently. Running both and looking at where they disagree (`rejudge.py`) is how
 you find both real misses and scorer blind spots.
+
+### A second, independent judge (Gemini)
+
+A local 7B judge grading a local 3B answer model is two small models checking each
+other. `judge.py` can also grade with Google Gemini (any model name starting with
+`gemini`), a much larger model from a different family, and `rejudge.py --compare`
+runs both judges on the same saved answers and lists where they split. A split is
+where a human should read the answer, because one of the judges is wrong.
+
+On the café quiz, `gemini-flash-lite-latest` agreed with the fact-check on 24/24 in
+75 seconds, where the local 7B needs minutes per answer on a busy CPU. That result
+is a wiring check, not proof of judgement: every answer was right, so the judge
+never had to catch a wrong one.
+
+Free-tier notes learned the hard way: each Gemini model allows only a small number
+of requests **per day** (20 for the default Flash at the time of writing), so a
+24-question run can exhaust it. A per-minute limit is retried; a per-day limit
+stops the call at once with a clear message instead of retrying for half an hour.
+Flash-Lite has its own, separate daily allowance and is plenty for grading.
 
 ## A result worth keeping: hybrid search on a tiny corpus
 

@@ -12,6 +12,9 @@
 #     python evals\rejudge.py                       # re-grade the newest full run
 #     python evals\rejudge.py --from evals\reports\2026-08-27_170514_full.json
 #     python evals\rejudge.py --judge-model llama3.2:3b   # try a weaker judge
+#     python evals\rejudge.py --compare gemini-flash-latest
+#         # judge the judge: grade with BOTH the local judge and Gemini, and list
+#         # every answer where the two judges disagree (needs GEMINI_API_KEY)
 #
 # Writes a *_judged.md and *_judged.json next to the source report.
 
@@ -54,13 +57,17 @@ def main():
     ap = argparse.ArgumentParser(description="Re-grade a saved run with the LLM judge.")
     ap.add_argument("--from", dest="src", default=None, help="Path to a *_full.json report. Defaults to the newest.")
     ap.add_argument("--judge-model", default=None, help="Override the judge model (default config.JUDGE_MODEL).")
+    ap.add_argument("--compare", default=None, help="A second judge model to grade the same answers, e.g. gemini-flash-latest.")
     args = ap.parse_args()
 
     src = args.src or newest_full_report()
     data = json.loads(Path(src).read_text(encoding="utf-8"))
     results = data["results"]
     print(f"Re-grading {len(results)} answers from {Path(src).name}")
-    print(f"Judge model: {args.judge_model or J.config.JUDGE_MODEL}\n")
+    print(f"Judge model: {args.judge_model or J.config.JUDGE_MODEL}")
+    if args.compare:
+        print(f"Second judge: {args.compare}")
+    print()
 
     rows = []
     agree = 0
@@ -73,6 +80,7 @@ def main():
         same = jv["verdict"] == sv
         if same:
             agree += 1
+        cv = J.judge(r["question"], req, r.get("answer"), model=args.compare) if args.compare else None
         rows.append({
             "id": r["id"],
             "question": r["question"],
@@ -82,6 +90,8 @@ def main():
             "judge": jv["verdict"],
             "judge_reason": jv["reason"],
             "agree": same,
+            "judge2": cv["verdict"] if cv else None,
+            "judge2_reason": cv["reason"] if cv else None,
         })
     secs = time.time() - t0
 
@@ -97,6 +107,14 @@ def main():
     print(f"Disagreements:            {len(disagreements)}")
     if errors:
         print(f"Judge errors:             {len(errors)} (model unreachable?)")
+    if args.compare:
+        j2_correct = sum(1 for x in rows if x["judge2"] == "correct")
+        j2_errors = sum(1 for x in rows if x["judge2"] == "error")
+        judges_split = [x for x in rows if x["judge2"] != x["judge"]]
+        print(f"Second judge pass:        {j2_correct}/{len(rows)}")
+        print(f"Judges agree:             {len(rows) - len(judges_split)}/{len(rows)}")
+        if j2_errors:
+            print(f"Second judge errors:      {j2_errors}")
     print(f"Time:                     {secs:.0f}s")
     print("=" * 54)
 
@@ -122,6 +140,20 @@ def main():
         flag = "" if x["agree"] else " ⚠"
         md.append(f"| {x['id']} | {x['substring']} | **{x['judge']}**{flag} | {x['judge_reason']} |")
     md.append("")
+    if args.compare:
+        md.append(f"## Judge vs judge: {judge_model} vs {args.compare}")
+        md.append("")
+        md.append(f"- {args.compare} pass rate: **{j2_correct}/{len(rows)}**")
+        md.append(f"- The two judges agree on **{len(rows) - len(judges_split)}/{len(rows)}**")
+        md.append("")
+        md.append("Where the judges split, read the answer yourself: that is where one of them is wrong.")
+        md.append("")
+        md.append(f"| Question | Substring | {judge_model} | {args.compare} | {args.compare} reason |")
+        md.append("|---|---|---|---|---|")
+        for x in rows:
+            flag = " ⚠" if x["judge2"] != x["judge"] else ""
+            md.append(f"| {x['id']} | {x['substring']} | {x['judge']} | **{x['judge2']}**{flag} | {x['judge2_reason']} |")
+        md.append("")
     if disagreements:
         md.append("## Disagreements (where the judge earns or loses trust)")
         md.append("")
@@ -145,6 +177,9 @@ def main():
         "substring_pass": sub_correct,
         "judge_pass": judge_correct,
         "agreement": agree,
+        "second_judge_model": args.compare,
+        "second_judge_pass": j2_correct if args.compare else None,
+        "judges_agreement": (len(rows) - len(judges_split)) if args.compare else None,
         "rows": rows,
     }, indent=2, ensure_ascii=False), encoding="utf-8")
 
