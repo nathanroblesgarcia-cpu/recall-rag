@@ -25,6 +25,8 @@ Each question in `golden.json` is scored on two independent things:
 | `run_eval.py` | asks each question, scores retrieval and answer, writes a report |
 | `judge.py` | an LLM-as-judge pass: a stronger local model grades each answer |
 | `rejudge.py` | compares the judge against the plain fact-check, and optionally against a second judge (`--compare`) |
+| `judge_calibration.json` | hand-written answers with known grades, planted mistakes, to test the graders |
+| `judge_calibration.py` | scores each grader (substring, local judge, Gemini) against those known grades |
 | `agent_golden.json` | the agent quiz: notes-only, numbers-only and mixed questions |
 | `agent_eval.py` | grades `agent.py`: tool routing, note facts, grounded numbers |
 | `reports/` | timestamped run history (gitignored) |
@@ -37,6 +39,7 @@ python run_eval.py --retrieval-only # fast: retrieval only, no answer model
 python run_eval.py --limit 5        # first 5 questions
 python judge.py                     # LLM-as-judge grading
 python rejudge.py --compare gemini-flash-latest  # judge the judge (needs GEMINI_API_KEY)
+python judge_calibration.py --judges gemini-flash-lite-latest  # grade the graders
 python agent_eval.py                # the agent quiz
 ```
 
@@ -84,6 +87,29 @@ of requests **per day** (20 for the default Flash at the time of writing), so a
 24-question run can exhaust it. A per-minute limit is retried; a per-day limit
 stops the call at once with a clear message instead of retrying for half an hour.
 Flash-Lite has its own, separate daily allowance and is plenty for grading.
+
+### Grading the graders: the calibration set
+
+Agreement between two graders says nothing about which one is right.
+`judge_calibration.json` fixes that: 16 hand-written answers with a **known**
+correct grade, each planting one mistake. Some are wrong answers built to fool a
+text match (the right digits inside a wrong number, "600" for "60"; keywords
+mentioned only to deny them; three guessed years). Some are correct answers in
+different words ("72 hours" for "3 days", "twenty-five thousand"). A few are plain
+controls. `judge_calibration.py` scores every grader against those labels and
+splits the misses into **false pass** (a wrong answer graded correct, which hides
+a bug) and **false fail** (a correct answer graded wrong, which is noise).
+
+| Grader | Right | False pass | False fail |
+|---|---|---|---|
+| substring fact-check | 7/16 | 4 | 5 |
+| gemini-flash-lite-latest | 16/16 | 0 | 0 |
+
+The substring check fell for every trap it was built to test, in both directions.
+The Gemini judge caught all of them. A perfect score on 16 obvious traps is a
+floor, not a ceiling: the next step is harder cases (answers that are mostly right
+with one subtle error) until the judge starts to miss, because a test that nothing
+fails cannot tell two judges apart.
 
 ## A result worth keeping: hybrid search on a tiny corpus
 
