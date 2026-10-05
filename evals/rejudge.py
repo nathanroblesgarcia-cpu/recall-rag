@@ -63,6 +63,9 @@ def main():
     src = args.src or newest_full_report()
     data = json.loads(Path(src).read_text(encoding="utf-8"))
     results = data["results"]
+    # Saved runs predate the "reference" field, so look it up in the golden set by id.
+    golden = json.loads((BASE_DIR / "golden.json").read_text(encoding="utf-8"))["items"]
+    refs = {g["id"]: g.get("reference") for g in golden}
     print(f"Re-grading {len(results)} answers from {Path(src).name}")
     print(f"Judge model: {args.judge_model or J.config.JUDGE_MODEL}")
     if args.compare:
@@ -75,12 +78,13 @@ def main():
     for n, r in enumerate(results, start=1):
         req = J.requirement_of(r)
         print(f"[{n}/{len(results)}] {r['id']}")
-        jv = J.judge(r["question"], req, r.get("answer"), model=args.judge_model)
+        ref = refs.get(r["id"])
+        jv = J.judge(r["question"], req, r.get("answer"), model=args.judge_model, reference=ref)
         sv = substring_verdict(r.get("answer_coverage"))
         same = jv["verdict"] == sv
         if same:
             agree += 1
-        cv = J.judge(r["question"], req, r.get("answer"), model=args.compare) if args.compare else None
+        cv = J.judge(r["question"], req, r.get("answer"), model=args.compare, reference=ref) if args.compare else None
         rows.append({
             "id": r["id"],
             "question": r["question"],

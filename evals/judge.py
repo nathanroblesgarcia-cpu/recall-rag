@@ -55,6 +55,14 @@ SYSTEM = (
     "- 'incorrect' = a required fact is missing or wrong, OR the answer says it could "
     "not find the information, OR it states a fact the requirement contradicts.\n"
     "- Do NOT reward a confident guess that the requirement does not support.\n"
+    "- If a REFERENCE ANSWER is given, it is the full correct fact. Use it to check "
+    "MEANING: the ANSWER is incorrect, even when the REQUIREMENT text appears, if it "
+    "changes what the fact means: a different unit that changes the amount (grams vs "
+    "kilograms, Fahrenheit vs Celsius at the same number), swapped or inverted values, a "
+    "flipped qualifier (at least vs at most), or the right value attached to the wrong "
+    "thing. An EQUIVALENT value in another unit (72 hours for 3 days, 410 F for 210 C) is "
+    "still correct. A right symptom with a wrong cause is partial. This rule overrides "
+    "'units do not matter'.\n"
     'Respond with ONLY compact JSON, no prose: '
     '{"verdict":"correct|partial|incorrect","reason":"<=20 words"}'
 )
@@ -203,17 +211,22 @@ def _ask_gemini(messages, model):
     return "".join(p.get("text", "") for p in parts)
 
 
-def judge(question, requirement, answer, model=None):
+def judge(question, requirement, answer, model=None, reference=None):
     """Grade one answer. Returns {"verdict", "reason"}. verdict is one of
     correct/partial/incorrect, or "error" if the judge model was unreachable.
 
     model: an Ollama model name (local), or any name starting with "gemini"
-    (e.g. gemini-flash-latest) to grade with Google Gemini instead."""
+    (e.g. gemini-flash-latest) to grade with Google Gemini instead.
+    reference: optional full correct answer (golden.json "reference"). The bare
+    REQUIREMENT ("240") cannot tell 240 kg from 240 g; the reference can. The
+    calibration set showed a judge without it passes those meaning changes."""
     if not answer:
         return {"verdict": "incorrect", "reason": "no answer produced"}
+    ref = f"REFERENCE ANSWER (the full correct fact): {reference}\n\n" if reference else ""
     user = (
         f"QUESTION: {question}\n\n"
         f"REQUIREMENT (the answer must convey): {requirement}\n\n"
+        f"{ref}"
         f"ANSWER: {answer}\n\n"
         "Grade the ANSWER now."
     )

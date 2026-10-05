@@ -91,7 +91,7 @@ Flash-Lite has its own, separate daily allowance and is plenty for grading.
 ### Grading the graders: the calibration set
 
 Agreement between two graders says nothing about which one is right.
-`judge_calibration.json` fixes that: 16 hand-written answers with a **known**
+`judge_calibration.json` fixes that: hand-written answers with a **known**
 correct grade, each planting one mistake. Some are wrong answers built to fool a
 text match (the right digits inside a wrong number, "600" for "60"; keywords
 mentioned only to deny them; three guessed years). Some are correct answers in
@@ -100,16 +100,44 @@ controls. `judge_calibration.py` scores every grader against those labels and
 splits the misses into **false pass** (a wrong answer graded correct, which hides
 a bug) and **false fail** (a correct answer graded wrong, which is noise).
 
-| Grader | Right | False pass | False fail |
-|---|---|---|---|
-| substring fact-check | 7/16 | 4 | 5 |
-| gemini-flash-lite-latest | 16/16 | 0 | 0 |
+The set grew in three rounds, and each round taught something:
 
-The substring check fell for every trap it was built to test, in both directions.
-The Gemini judge caught all of them. A perfect score on 16 obvious traps is a
-floor, not a ceiling: the next step is harder cases (answers that are mostly right
-with one subtle error) until the judge starts to miss, because a test that nothing
-fails cannot tell two judges apart.
+**Round 1, basic (16 obvious traps).** The substring check scored 7/16 and fell
+for every trap in both directions. Gemini scored 16/16. A perfect score on easy
+traps is a floor, not a ceiling: a test nothing fails cannot tell judges apart.
+
+**Round 2, hard (12 answers that are mostly right with one subtle error).** Dose
+and yield swapped ("36 g in, 18 g out"), "240 grams" for 240 kg, "65 Fahrenheit"
+for 65 Celsius, "at most 3 days" for at least, the right name in the wrong role.
+Gemini dropped to **6/12 and passed 5 wrong answers**. Its reasons gave the cause
+away: "conveys the required 240". The judge only saw the bare required fact, and
+its prompt said units do not matter, so it could not tell 240 kg from 240 g. The
+model was not the weak link; the grading setup was.
+
+The fix: each golden question now carries a full `reference` answer ("240 kg of
+Ethiopian Yirgacheffe every month"), and the judge prompt says a change of
+meaning (unit that changes the amount, swapped values, flipped qualifier, right
+value on the wrong thing) is wrong even when the required text appears, while an
+equivalent value in another unit is still right. Hard set: **12/12**.
+
+**Round 3, holdout (8 new traps, written after the fix, run once, never tuned on).**
+Round 2's fix was written while looking at round 2's misses, which is teaching to
+the test. The holdout uses traps the prompt does not name: "1,200 a year" for a
+month, the target reported as the current balance, two ports swapped, "no minimum"
+when 60 kg is the minimum, "3 weeks" for 3 days. Gemini: **7/8, zero false
+passes**. Its one miss was too strict, not too lenient: it called a right recipe
+with a wrong shot time incorrect instead of partial. Left untuned on purpose.
+
+| Grader | Basic | Hard | Holdout | Wrong answers passed (of 24) |
+|---|---|---|---|---|
+| substring fact-check | 7/16 | 2/12 | 2/8 | 18 |
+| Gemini, bare requirement | 16/16 | 6/12 | not run | 5 so far |
+| Gemini, with reference answer | 16/16 | 12/12 | 7/8 | **0** |
+
+Lesson: an LLM judge is only as good as what it is shown. Give it the full right
+answer, not a keyword, and measure it on traps it was not tuned on.
+`python judge_calibration.py --no-reference` reruns the bare-requirement version
+for the A/B.
 
 ## A result worth keeping: hybrid search on a tiny corpus
 

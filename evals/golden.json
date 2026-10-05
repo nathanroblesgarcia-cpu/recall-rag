@@ -14,7 +14,8 @@
           "25k"
         ]
       ],
-      "tests": "Money - numeric goal about the user ('my')"
+      "tests": "Money - numeric goal about the user ('my')",
+      "reference": "The emergency fund target is 25,000 dollars."
     },
     {
       "id": "savings-monthly",
@@ -28,7 +29,8 @@
           "1200"
         ]
       ],
-      "tests": "Money - monthly amount"
+      "tests": "Money - monthly amount",
+      "reference": "1,200 dollars a month: 800 to the emergency fund, 400 to the second-location fund."
     },
     {
       "id": "loyalty-app-port",
@@ -39,7 +41,8 @@
       "expected_facts": [
         "5240"
       ],
-      "tests": "Side projects - config fact"
+      "tests": "Side projects - config fact",
+      "reference": "The BeanCount loyalty app runs on port 5240."
     },
     {
       "id": "espresso-log-port",
@@ -50,7 +53,8 @@
       "expected_facts": [
         "5230"
       ],
-      "tests": "Side projects - distinguishing two apps"
+      "tests": "Side projects - distinguishing two apps",
+      "reference": "The home espresso dial-in log runs on port 5230."
     },
     {
       "id": "head-roaster",
@@ -63,7 +67,8 @@
           "maria"
         ]
       ],
-      "tests": "Team - person lookup"
+      "tests": "Team - person lookup",
+      "reference": "Maria Santos is the head roaster and the owner's mentor."
     },
     {
       "id": "scheduling-tool",
@@ -76,7 +81,8 @@
           "deputy"
         ]
       ],
-      "tests": "Team - person-to-tool mapping"
+      "tests": "Team - person-to-tool mapping",
+      "reference": "Dan builds the staff schedule in Deputy."
     },
     {
       "id": "highland-order",
@@ -89,7 +95,8 @@
           "240"
         ]
       ],
-      "tests": "Suppliers - exact quantity"
+      "tests": "Suppliers - exact quantity",
+      "reference": "240 kg of Ethiopian Yirgacheffe from Highland every month."
     },
     {
       "id": "verde-moq",
@@ -102,7 +109,8 @@
           "60"
         ]
       ],
-      "tests": "Suppliers - minimum order quantity"
+      "tests": "Suppliers - minimum order quantity",
+      "reference": "Verde Importers' minimum order is 60 kg per lot."
     },
     {
       "id": "sunday-open",
@@ -118,7 +126,8 @@
           "eight"
         ]
       ],
-      "tests": "Shop - opening-hours quirk"
+      "tests": "Shop - opening-hours quirk",
+      "reference": "On Sundays the cafe opens at 8am."
     },
     {
       "id": "machine-incident",
@@ -133,7 +142,8 @@
           "overload"
         ]
       ],
-      "tests": "Shop - incident root cause"
+      "tests": "Shop - incident root cause",
+      "reference": "A tripped breaker: a newly added second grinder on the same circuit overloaded it."
     },
     {
       "id": "espresso-recipe",
@@ -149,7 +159,8 @@
           "36"
         ]
       ],
-      "tests": "Shop - recipe, two required numbers"
+      "tests": "Shop - recipe, two required numbers",
+      "reference": "18 g of coffee in, 36 g of espresso out, in about 27 seconds."
     },
     {
       "id": "milk-temp",
@@ -162,7 +173,8 @@
           "65"
         ]
       ],
-      "tests": "Shop - house standard"
+      "tests": "Shop - house standard",
+      "reference": "Milk is steamed to 65 degrees Celsius, no hotter."
     },
     {
       "id": "pourover-ratio",
@@ -177,7 +189,8 @@
           "16"
         ]
       ],
-      "tests": "Recipes - brew ratio"
+      "tests": "Recipes - brew ratio",
+      "reference": "1 g of coffee to 16 g of water (1:16)."
     },
     {
       "id": "first-crack-temp",
@@ -190,7 +203,8 @@
           "196"
         ]
       ],
-      "tests": "Recipes - roast fact"
+      "tests": "Recipes - roast fact",
+      "reference": "First crack starts around 196 degrees Celsius."
     },
     {
       "id": "pos-system",
@@ -203,7 +217,8 @@
           "square"
         ]
       ],
-      "tests": "Shop - system lookup"
+      "tests": "Shop - system lookup",
+      "reference": "The cafe uses Square for the till and card payments."
     },
     {
       "id": "second-location-year",
@@ -216,7 +231,8 @@
           "2027"
         ]
       ],
-      "tests": "Personal - plan date"
+      "tests": "Personal - plan date",
+      "reference": "The goal is to open a second cafe in 2027."
     },
     {
       "id": "verde-decaf-process",
@@ -229,7 +245,8 @@
           "sugarcane"
         ]
       ],
-      "tests": "Exact word - a rare process name (added for hybrid search)"
+      "tests": "Exact word - a rare process name (added for hybrid search)",
+      "reference": "The decaf is sugarcane process."
     },
     {
       "id": "decaf-importer",
@@ -242,7 +259,8 @@
           "verde"
         ]
       ],
-      "tests": "Exact name - supplier name (added for hybrid search)"
+      "tests": "Exact name - supplier name (added for hybrid search)",
+      "reference": "Decaf comes from Verde Importers."
     },
     {
       "id": "machine-down-date",
@@ -257,7 +275,8 @@
           "may 10"
         ]
       ],
-      "tests": "Exact code - an ISO date (added for hybrid search)"
+      "tests": "Exact code - an ISO date (added for hybrid search)",
+      "reference": "The espresso machine died on 2026-05-10."
     },
     {
       "id": "beancount-replaced",
@@ -270,7 +289,8 @@
           "punch card"
         ]
       ],
-      "tests": "Exact name - made-up product word (added for hybrid search)"
+      "tests": "Exact name - made-up product word (added for hybrid search)",
+      "reference": "BeanCount replaced the paper punch cards."
     },
     {
       "id": "maria-weekly",
@@ -283,7 +303,8 @@
           "cupping"
         ]
       ],
-      "tests": "Exact name - person + a trade term (added for hybrid search)"
+      "tests": "Exact name - person + a trade term (added for hybrid search)",
+      "reference": "Maria runs the weekly cupping session."
     },
     {
       "id": "drawer-flag",
@@ -296,7 +317,8 @@
           "dan"
         ]
       ],
-      "tests": "Exact rule lookup - small figure in a process note (added for hybrid search)"
+      "tests": "Exact rule lookup - small figure in a process note (added for hybrid search)",
+      "reference": "When the cash drawer is more than five dollars out, it is flagged to Dan."
     },
     {
       "id": "bean-rest",
@@ -310,7 +332,8 @@
           "three days"
         ]
       ],
-      "tests": "Exact number in a reference list (added for hybrid search)"
+      "tests": "Exact number in a reference list (added for hybrid search)",
+      "reference": "Roasted beans rest at least 3 days before brewing."
     },
     {
       "id": "medium-drop-temp",
@@ -321,7 +344,8 @@
       "expected_facts": [
         "210"
       ],
-      "tests": "Exact number - one of several temperatures in the notes (added for hybrid search)"
+      "tests": "Exact number - one of several temperatures in the notes (added for hybrid search)",
+      "reference": "A medium roast is dropped at about 210 degrees Celsius."
     }
   ]
 }

@@ -63,6 +63,7 @@ def load_items():
         g = golden[it["golden_id"]]
         it["question"] = g["question"]
         it["expected_facts"] = g["expected_facts"]
+        it["reference"] = g.get("reference")
     return items
 
 
@@ -70,11 +71,14 @@ def main():
     ap = argparse.ArgumentParser(description="Measure each grader against known correct grades.")
     ap.add_argument("--judges", nargs="*", default=None,
                     help="Judge models to test (Ollama names, or gemini-*). Default: config.JUDGE_MODEL.")
+    ap.add_argument("--no-reference", action="store_true",
+                    help="Hide golden.json's full reference answer from the judges (bare requirement only), for an A/B.")
     args = ap.parse_args()
     judges = args.judges or [J.config.JUDGE_MODEL]
 
     items = load_items()
-    print(f"{len(items)} calibration answers | graders: {SUBSTRING}, {', '.join(judges)}\n")
+    print(f"{len(items)} calibration answers | graders: {SUBSTRING}, {', '.join(judges)} | "
+          f"reference answers {'HIDDEN' if args.no_reference else 'shown'} to judges\n")
 
     rows = []
     t0 = time.time()
@@ -82,52 +86,60 @@ def main():
         req = J.requirement_of(it)
         verdicts = {SUBSTRING: {"verdict": substring_verdict(it["answer"], it["expected_facts"]), "reason": ""}}
         for m in judges:
-            verdicts[m] = J.judge(it["question"], req, it["answer"], model=m)
+            ref = None if args.no_reference else it.get("reference")
+            verdicts[m] = J.judge(it["question"], req, it["answer"], model=m, reference=ref)
         marks = "  ".join(f"{g}={'ok' if v['verdict'] == it['label'] else v['verdict'].upper()}"
                           for g, v in verdicts.items())
-        print(f"[{n}/{len(items)}] {it['id']:<22} label={it['label']:<9} {marks}")
+        print(f"[{n}/{len(items)}] {it.get('set', 'basic'):<5} {it['id']:<22} label={it['label']:<9} {marks}")
         rows.append({**it, "requirement": req, "verdicts": verdicts})
     secs = time.time() - t0
 
     graders = [SUBSTRING] + judges
-    score = {}
-    for g in graders:
-        right = sum(1 for r in rows if r["verdicts"][g]["verdict"] == r["label"])
-        errors = sum(1 for r in rows if r["verdicts"][g]["verdict"] == "error")
-        # The costly mistake for an eval is passing a wrong answer: it hides a bug.
-        false_pass = sum(1 for r in rows if r["verdicts"][g]["verdict"] == "correct" and r["label"] != "correct")
-        false_fail = sum(1 for r in rows if r["verdicts"][g]["verdict"] != "correct" and r["label"] == "correct")
-        score[g] = {"right": right, "errors": errors, "false_pass": false_pass, "false_fail": false_fail}
+    sets = ["all"] + sorted({r.get("set", "basic") for r in rows})
 
-    print("\n" + "=" * 64)
-    print(f"{'Grader':<28}{'Right':>8}{'False pass':>12}{'False fail':>12}")
+    def tally(g, subset):
+        right = sum(1 for r in subset if r["verdicts"][g]["verdict"] == r["label"])
+        errors = sum(1 for r in subset if r["verdicts"][g]["verdict"] == "error")
+        # The costly mistake for an eval is passing a wrong answer: it hides a bug.
+        false_pass = sum(1 for r in subset if r["verdicts"][g]["verdict"] == "correct" and r["label"] != "correct")
+        false_fail = sum(1 for r in subset if r["verdicts"][g]["verdict"] != "correct" and r["label"] == "correct")
+        return {"right": right, "of": len(subset), "errors": errors, "false_pass": false_pass, "false_fail": false_fail}
+
+    score = {g: {s: tally(g, [r for r in rows if s == "all" or r.get("set", "basic") == s]) for s in sets}
+             for g in graders}
+
+    print("\n" + "=" * 70)
+    print(f"{'Grader':<28}{'Set':<7}{'Right':>8}{'False pass':>12}{'False fail':>12}")
     for g in graders:
-        s = score[g]
-        err = f"  ({s['errors']} errors)" if s["errors"] else ""
-        print(f"{g:<28}{s['right']:>5}/{len(rows):<2}{s['false_pass']:>12}{s['false_fail']:>12}{err}")
+        for s in sets:
+            t = score[g][s]
+            err = f"  ({t['errors']} errors)" if t["errors"] else ""
+            print(f"{g if s == 'all' else '':<28}{s:<7}{t['right']:>5}/{t['of']:<2}{t['false_pass']:>12}{t['false_fail']:>12}{err}")
     print(f"Time: {secs:.0f}s")
-    print("=" * 64)
+    print("=" * 70)
 
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    md = [f"# Judge calibration - {datetime.now():%Y-%m-%d %H:%M}", ""]
+    md = [f"# Judge calibration - {datetime.now():%Y-%m-%d %H:%M}", "",
+          f"Reference answers {'hidden from' if args.no_reference else 'shown to'} the judges.", ""]
     md.append("Each answer was written by hand with a known correct grade. "
               "**False pass** = a wrong answer graded correct (hides bugs, the costly one). "
               "**False fail** = a correct answer graded wrong (noise).")
     md.append("")
-    md.append("| Grader | Right | False pass | False fail |")
-    md.append("|---|---|---|---|")
+    md.append("| Grader | Set | Right | False pass | False fail |")
+    md.append("|---|---|---|---|---|")
     for g in graders:
-        s = score[g]
-        md.append(f"| {g} | **{s['right']}/{len(rows)}** | {s['false_pass']} | {s['false_fail']} |")
+        for s in sets:
+            t = score[g][s]
+            md.append(f"| {g} | {s} | **{t['right']}/{t['of']}** | {t['false_pass']} | {t['false_fail']} |")
     md.append("")
-    md.append("| Answer | Trap | Label | " + " | ".join(graders) + " |")
-    md.append("|---|---|---|" + "---|" * len(graders))
+    md.append("| Answer | Set | Trap | Label | " + " | ".join(graders) + " |")
+    md.append("|---|---|---|---|" + "---|" * len(graders))
     for r in rows:
         cells = []
         for g in graders:
             v = r["verdicts"][g]["verdict"]
             cells.append(v if v == r["label"] else f"**{v}** ✗")
-        md.append(f"| {r['id']} | {r['trap']} | {r['label']} | " + " | ".join(cells) + " |")
+        md.append(f"| {r['id']} | {r.get('set', 'basic')} | {r['trap']} | {r['label']} | " + " | ".join(cells) + " |")
     md.append("")
     misses = [(r, g) for r in rows for g in judges if r["verdicts"][g]["verdict"] != r["label"]]
     if misses:

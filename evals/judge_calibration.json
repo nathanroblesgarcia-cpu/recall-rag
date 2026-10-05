@@ -1,53 +1,329 @@
 {
-  "description": "Judge calibration set: hand-written answers with a KNOWN correct grade, used to measure the graders themselves. Each item reuses a question and its expected_facts from golden.json (by golden_id) and supplies a planted answer. 'label' is the grade a careful human gives. 'trap' names the mistake being tested. Run: python judge_calibration.py",
+  "description": "Judge calibration set: hand-written answers with a KNOWN correct grade, used to measure the graders themselves. Each item reuses a question and its expected_facts from golden.json (by golden_id) and supplies a planted answer. 'label' is the grade a careful human gives. 'trap' names the mistake being tested. 'set' is basic (obvious traps) hard (mostly right, one subtle error), or holdout (written AFTER the judge prompt was tuned on basic+hard, run once with no further tuning, to check the fix generalises). Run: python judge_calibration.py",
   "items": [
-    {"id": "denied-cause", "golden_id": "machine-incident", "trap": "keywords present but denied",
-     "answer": "It was not the breaker, and there was no circuit overload. The pump simply wore out.",
-     "label": "incorrect", "why": "Mentions breaker, circuit and overload only to deny them. A substring check passes it."},
-    {"id": "number-inside-number", "golden_id": "verde-moq", "trap": "right digits inside a wrong number",
-     "answer": "The minimum order from Verde Importers is 600 kg per lot.",
-     "label": "incorrect", "why": "600 is not 60, but the text '60' is inside '600'."},
-    {"id": "temp-inside-temp", "golden_id": "milk-temp", "trap": "right digits inside a wrong number",
-     "answer": "We steam milk to 165 degrees.",
-     "label": "incorrect", "why": "165 is not 65, but the text '65' is inside '165'."},
-    {"id": "shotgun-year", "golden_id": "second-location-year", "trap": "lists several guesses",
-     "answer": "Maybe 2026, 2027 or 2028, the notes are not clear.",
-     "label": "incorrect", "why": "Throws out three years instead of committing to 2027."},
-    {"id": "wrong-number", "golden_id": "ef-target", "trap": "plain wrong fact",
-     "answer": "Your emergency fund target is 15,000 dollars.",
-     "label": "incorrect", "why": "Target is 25,000."},
-    {"id": "wrong-person", "golden_id": "head-roaster", "trap": "wrong entity from the same notes",
-     "answer": "Our head roaster and your mentor is Dan.",
-     "label": "incorrect", "why": "Dan is the manager; Maria is the head roaster."},
-    {"id": "digit-swap", "golden_id": "first-crack-temp", "trap": "digits swapped",
-     "answer": "First crack usually starts around 169 degrees Celsius.",
-     "label": "incorrect", "why": "169, not 196."},
-    {"id": "refusal", "golden_id": "loyalty-app-port", "trap": "could not find it",
-     "answer": "I couldn't find the loyalty app's port in the notes.",
-     "label": "incorrect", "why": "A refusal never passes."},
-    {"id": "half-recipe", "golden_id": "espresso-recipe", "trap": "one of two facts missing",
-     "answer": "Our standard shot uses 18 g of coffee.",
-     "label": "partial", "why": "Dose present, yield (36 g) missing."},
-    {"id": "one-oclock-words", "golden_id": "sunday-open", "trap": "correct, reworded",
-     "answer": "On Sundays we open the doors at 8 o'clock in the morning.",
-     "label": "correct", "why": "Same time, different wording. A substring check fails it."},
-    {"id": "hours-not-days", "golden_id": "bean-rest", "trap": "correct, different unit",
-     "answer": "Let roasted beans rest for at least 72 hours before brewing.",
-     "label": "correct", "why": "72 hours is 3 days."},
-    {"id": "words-not-digits", "golden_id": "ef-target", "trap": "correct, number in words",
-     "answer": "The target is twenty-five thousand dollars.",
-     "label": "correct", "why": "Twenty-five thousand is 25,000."},
-    {"id": "date-in-words", "golden_id": "machine-down-date", "trap": "correct, date reworded",
-     "answer": "It died on the tenth of May 2026.",
-     "label": "correct", "why": "Same date as 2026-05-10."},
-    {"id": "ratio-in-words", "golden_id": "pourover-ratio", "trap": "correct, ratio in words",
-     "answer": "We use one part coffee to sixteen parts water.",
-     "label": "correct", "why": "Same as 1:16."},
-    {"id": "control-correct", "golden_id": "pos-system", "trap": "control: plainly correct",
-     "answer": "The cafe uses Square for the till and card payments.",
-     "label": "correct", "why": "Straight correct answer."},
-    {"id": "control-extra-detail", "golden_id": "drawer-flag", "trap": "control: correct with extra detail",
-     "answer": "Dan gets flagged. He checks the drawer against the Square report at close and follows up with whoever was on the till.",
-     "label": "correct", "why": "Correct fact plus harmless extra detail."}
+    {
+      "id": "denied-cause",
+      "golden_id": "machine-incident",
+      "trap": "keywords present but denied",
+      "answer": "It was not the breaker, and there was no circuit overload. The pump simply wore out.",
+      "label": "incorrect",
+      "why": "Mentions breaker, circuit and overload only to deny them. A substring check passes it.",
+      "set": "basic"
+    },
+    {
+      "id": "number-inside-number",
+      "golden_id": "verde-moq",
+      "trap": "right digits inside a wrong number",
+      "answer": "The minimum order from Verde Importers is 600 kg per lot.",
+      "label": "incorrect",
+      "why": "600 is not 60, but the text '60' is inside '600'.",
+      "set": "basic"
+    },
+    {
+      "id": "temp-inside-temp",
+      "golden_id": "milk-temp",
+      "trap": "right digits inside a wrong number",
+      "answer": "We steam milk to 165 degrees.",
+      "label": "incorrect",
+      "why": "165 is not 65, but the text '65' is inside '165'.",
+      "set": "basic"
+    },
+    {
+      "id": "shotgun-year",
+      "golden_id": "second-location-year",
+      "trap": "lists several guesses",
+      "answer": "Maybe 2026, 2027 or 2028, the notes are not clear.",
+      "label": "incorrect",
+      "why": "Throws out three years instead of committing to 2027.",
+      "set": "basic"
+    },
+    {
+      "id": "wrong-number",
+      "golden_id": "ef-target",
+      "trap": "plain wrong fact",
+      "answer": "Your emergency fund target is 15,000 dollars.",
+      "label": "incorrect",
+      "why": "Target is 25,000.",
+      "set": "basic"
+    },
+    {
+      "id": "wrong-person",
+      "golden_id": "head-roaster",
+      "trap": "wrong entity from the same notes",
+      "answer": "Our head roaster and your mentor is Dan.",
+      "label": "incorrect",
+      "why": "Dan is the manager; Maria is the head roaster.",
+      "set": "basic"
+    },
+    {
+      "id": "digit-swap",
+      "golden_id": "first-crack-temp",
+      "trap": "digits swapped",
+      "answer": "First crack usually starts around 169 degrees Celsius.",
+      "label": "incorrect",
+      "why": "169, not 196.",
+      "set": "basic"
+    },
+    {
+      "id": "refusal",
+      "golden_id": "loyalty-app-port",
+      "trap": "could not find it",
+      "answer": "I couldn't find the loyalty app's port in the notes.",
+      "label": "incorrect",
+      "why": "A refusal never passes.",
+      "set": "basic"
+    },
+    {
+      "id": "half-recipe",
+      "golden_id": "espresso-recipe",
+      "trap": "one of two facts missing",
+      "answer": "Our standard shot uses 18 g of coffee.",
+      "label": "partial",
+      "why": "Dose present, yield (36 g) missing.",
+      "set": "basic"
+    },
+    {
+      "id": "one-oclock-words",
+      "golden_id": "sunday-open",
+      "trap": "correct, reworded",
+      "answer": "On Sundays we open the doors at 8 o'clock in the morning.",
+      "label": "correct",
+      "why": "Same time, different wording. A substring check fails it.",
+      "set": "basic"
+    },
+    {
+      "id": "hours-not-days",
+      "golden_id": "bean-rest",
+      "trap": "correct, different unit",
+      "answer": "Let roasted beans rest for at least 72 hours before brewing.",
+      "label": "correct",
+      "why": "72 hours is 3 days.",
+      "set": "basic"
+    },
+    {
+      "id": "words-not-digits",
+      "golden_id": "ef-target",
+      "trap": "correct, number in words",
+      "answer": "The target is twenty-five thousand dollars.",
+      "label": "correct",
+      "why": "Twenty-five thousand is 25,000.",
+      "set": "basic"
+    },
+    {
+      "id": "date-in-words",
+      "golden_id": "machine-down-date",
+      "trap": "correct, date reworded",
+      "answer": "It died on the tenth of May 2026.",
+      "label": "correct",
+      "why": "Same date as 2026-05-10.",
+      "set": "basic"
+    },
+    {
+      "id": "ratio-in-words",
+      "golden_id": "pourover-ratio",
+      "trap": "correct, ratio in words",
+      "answer": "We use one part coffee to sixteen parts water.",
+      "label": "correct",
+      "why": "Same as 1:16.",
+      "set": "basic"
+    },
+    {
+      "id": "control-correct",
+      "golden_id": "pos-system",
+      "trap": "control: plainly correct",
+      "answer": "The cafe uses Square for the till and card payments.",
+      "label": "correct",
+      "why": "Straight correct answer.",
+      "set": "basic"
+    },
+    {
+      "id": "control-extra-detail",
+      "golden_id": "drawer-flag",
+      "trap": "control: correct with extra detail",
+      "answer": "Dan gets flagged. He checks the drawer against the Square report at close and follows up with whoever was on the till.",
+      "label": "correct",
+      "why": "Correct fact plus harmless extra detail.",
+      "set": "basic"
+    },
+    {
+      "id": "swapped-recipe",
+      "golden_id": "espresso-recipe",
+      "trap": "both numbers present, swapped",
+      "answer": "Our standard shot is 36 g of coffee in and 18 g of espresso out, in about 27 seconds.",
+      "label": "incorrect",
+      "why": "Dose and yield are swapped: it is 18 g in, 36 g out.",
+      "set": "hard"
+    },
+    {
+      "id": "inverted-ratio",
+      "golden_id": "pourover-ratio",
+      "trap": "ratio inverted",
+      "answer": "We brew pour-over at 16 g of coffee to 1 g of water.",
+      "label": "incorrect",
+      "why": "Inverted: 1 g coffee to 16 g water.",
+      "set": "hard"
+    },
+    {
+      "id": "wrong-unit-grams",
+      "golden_id": "highland-order",
+      "trap": "right number, wrong unit",
+      "answer": "We order 240 grams of Ethiopian Yirgacheffe from Highland each month.",
+      "label": "incorrect",
+      "why": "240 kg, not 240 g: a thousand times off.",
+      "set": "hard"
+    },
+    {
+      "id": "wrong-unit-fahrenheit",
+      "golden_id": "milk-temp",
+      "trap": "right number, wrong unit",
+      "answer": "We steam milk to 65 degrees Fahrenheit.",
+      "label": "incorrect",
+      "why": "65 Celsius, not Fahrenheit (65 F is barely warm).",
+      "set": "hard"
+    },
+    {
+      "id": "wrong-coffee",
+      "golden_id": "highland-order",
+      "trap": "right number, wrong subject",
+      "answer": "Each month we order 240 kg of Kenyan from Highland. We don't order Ethiopian from them.",
+      "label": "incorrect",
+      "why": "The 240 kg order is Ethiopian; it denies the thing asked about.",
+      "set": "hard"
+    },
+    {
+      "id": "wrong-year",
+      "golden_id": "machine-down-date",
+      "trap": "right day, wrong year",
+      "answer": "The espresso machine died on May 10, 2025.",
+      "label": "incorrect",
+      "why": "2026, not 2025. The text 'may 10' still matches.",
+      "set": "hard"
+    },
+    {
+      "id": "flipped-qualifier",
+      "golden_id": "bean-rest",
+      "trap": "at least flipped to at most",
+      "answer": "Roasted beans should rest for at most 3 days before brewing, then they go stale.",
+      "label": "incorrect",
+      "why": "It is AT LEAST 3 days; 'at most' reverses the advice.",
+      "set": "hard"
+    },
+    {
+      "id": "role-swap",
+      "golden_id": "head-roaster",
+      "trap": "right name, wrong role",
+      "answer": "Maria is our lead barista. The head roaster and your mentor is Dan.",
+      "label": "incorrect",
+      "why": "Maria is the head roaster; the answer gives the role to Dan.",
+      "set": "hard"
+    },
+    {
+      "id": "wrong-cause-added",
+      "golden_id": "machine-incident",
+      "trap": "right symptom, wrong root cause",
+      "answer": "A tripped breaker, caused by a power cut on the street that morning.",
+      "label": "partial",
+      "why": "Breaker is right, but the cause was a second grinder overloading the circuit, not a power cut.",
+      "set": "hard"
+    },
+    {
+      "id": "self-corrected",
+      "golden_id": "verde-moq",
+      "trap": "wrong first, corrected after",
+      "answer": "The minimum is 50 kg. Sorry, correction: it is 60 kg per lot.",
+      "label": "correct",
+      "why": "The final, corrected answer is right.",
+      "set": "hard"
+    },
+    {
+      "id": "hedged-right",
+      "golden_id": "sunday-open",
+      "trap": "right fact, hedged",
+      "answer": "I think it is 8am on Sundays, but check the opening-hours note to be sure.",
+      "label": "correct",
+      "why": "States the right time; hedging is not an error.",
+      "set": "hard"
+    },
+    {
+      "id": "converted-right",
+      "golden_id": "medium-drop-temp",
+      "trap": "correct, converted unit",
+      "answer": "We drop a medium roast at about 410 degrees Fahrenheit.",
+      "label": "correct",
+      "why": "210 C is 410 F. Right fact in another unit.",
+      "set": "hard"
+    },
+    {
+      "id": "per-year-not-month",
+      "golden_id": "savings-monthly",
+      "trap": "right amount, wrong period",
+      "answer": "You set aside 1,200 dollars a year.",
+      "label": "incorrect",
+      "why": "1,200 a MONTH; a year is twelve times less.",
+      "set": "holdout"
+    },
+    {
+      "id": "balance-not-target",
+      "golden_id": "ef-target",
+      "trap": "right number, different quantity",
+      "answer": "Your emergency fund already holds 25,000 dollars.",
+      "label": "incorrect",
+      "why": "25,000 is the target, not the current balance.",
+      "set": "holdout"
+    },
+    {
+      "id": "ports-swapped",
+      "golden_id": "loyalty-app-port",
+      "trap": "two values swapped between two things",
+      "answer": "BeanCount runs on port 5230, and the home espresso log is on 5240.",
+      "label": "incorrect",
+      "why": "BeanCount is 5240; the answer gives it 5230.",
+      "set": "holdout"
+    },
+    {
+      "id": "no-minimum",
+      "golden_id": "verde-moq",
+      "trap": "number present, rule denied",
+      "answer": "Verde has no minimum order; we just tend to buy about 60 kg per lot.",
+      "label": "incorrect",
+      "why": "60 kg IS the minimum; the answer says there is none.",
+      "set": "holdout"
+    },
+    {
+      "id": "weeks-not-days",
+      "golden_id": "bean-rest",
+      "trap": "unit change not named in the rule",
+      "answer": "Rest roasted beans for at least 3 weeks before brewing.",
+      "label": "incorrect",
+      "why": "3 days, not 3 weeks.",
+      "set": "holdout"
+    },
+    {
+      "id": "wrong-shot-time",
+      "golden_id": "espresso-recipe",
+      "trap": "required facts right, reference detail wrong",
+      "answer": "18 g in, 36 g out, pulled in about 72 seconds.",
+      "label": "partial",
+      "why": "Dose and yield right, but the shot takes about 27 seconds, not 72.",
+      "set": "holdout"
+    },
+    {
+      "id": "shorthand-right",
+      "golden_id": "savings-monthly",
+      "trap": "correct, shorthand number",
+      "answer": "About 1.2k a month.",
+      "label": "correct",
+      "why": "1.2k is 1,200.",
+      "set": "holdout"
+    },
+    {
+      "id": "paraphrase-right",
+      "golden_id": "decaf-importer",
+      "trap": "correct, paraphrased",
+      "answer": "Our decaf lots come through Verde.",
+      "label": "correct",
+      "why": "Same fact, different wording.",
+      "set": "holdout"
+    }
   ]
 }
