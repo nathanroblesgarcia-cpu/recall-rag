@@ -133,11 +133,38 @@ with a wrong shot time incorrect instead of partial. Left untuned on purpose.
 | substring fact-check | 7/16 | 2/12 | 2/8 | 18 |
 | Gemini, bare requirement | 16/16 | 6/12 | not run | 5 so far |
 | Gemini, with reference answer | 16/16 | 12/12 | 7/8 | **0** |
+| local qwen2.5:7b, with reference answer | 15/16 | 10/12 | 6/8 | 2 |
 
 Lesson: an LLM judge is only as good as what it is shown. Give it the full right
 answer, not a keyword, and measure it on traps it was not tuned on.
 `python judge_calibration.py --no-reference` reruns the bare-requirement version
 for the A/B.
+
+### Local judge vs cloud judge, and why voting did not help
+
+The local 7B judge (free, offline, same prompt and reference answers) scored 31/36
+with **2 false passes**: it called a half recipe ("18 g of coffee", yield missing)
+fully correct, and accepted "the fund already holds 25,000" when 25,000 is the
+target, not the balance. Its other misses were the safe kind (too strict).
+
+A common fix for a shaky judge is to ask it several times and take a vote. We
+tried it: each answer graded 5 times with some randomness (temperature 0.7),
+compared with one grade at temperature 0.
+
+| Rule | Right | False pass | False fail |
+|---|---|---|---|
+| one vote, temperature 0 | 31/36 | 2 | 1 |
+| majority of 5 | 31/36 | 2 | 1 |
+| strict: any doubt fails it | 31/36 | 1 | 2 |
+
+Majority voting changed nothing, and the strict rule only swapped one error for
+another, at five times the cost. The reason shows in the raw votes: the half
+recipe was graded "correct" 5 times out of 5. These are **systematic blind
+spots, not random noise**, and voting only cancels noise. Check whether a judge's
+errors repeat before paying for votes.
+
+How we use the two judges: the local model is the free, fast judge while
+iterating on Recall; Gemini is the grade we quote.
 
 ## A result worth keeping: hybrid search on a tiny corpus
 
